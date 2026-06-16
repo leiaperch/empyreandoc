@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
@@ -24,6 +25,7 @@ interface SidebarProps {
 
 export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const role = (session?.user as { role?: string })?.role;
   const [categories, setCategories] = useState<Category[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -34,6 +36,11 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const [subCatName, setSubCatName] = useState("");
   const [subCatIcon, setSubCatIcon] = useState("");
   const [subCreating, setSubCreating] = useState(false);
+
+  // Inline new-page state
+  const [newPageCatId, setNewPageCatId] = useState<string | null>(null);
+  const [newPageTitle, setNewPageTitle] = useState("");
+  const [newPageCreating, setNewPageCreating] = useState(false);
 
   // Rename state for categories
   const [renameCatId, setRenameCatId] = useState<string | null>(null);
@@ -156,6 +163,54 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
     setRenamePageId(null);
   };
 
+  const startInlineNewPage = (catId: string) => {
+    setNewPageCatId(catId);
+    setNewPageTitle("");
+    setExpanded((prev) => ({ ...prev, [catId]: true }));
+    setRenameCatId(null);
+    setRenamePageId(null);
+  };
+
+  const createInlinePage = async () => {
+    if (!newPageTitle.trim() || !newPageCatId) return;
+    setNewPageCreating(true);
+    const res = await fetch("/api/pages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newPageTitle.trim(), categoryId: newPageCatId }),
+    });
+    setNewPageCreating(false);
+    if (res.ok) {
+      const page = await res.json();
+      setNewPageCatId(null);
+      setNewPageTitle("");
+      await fetchPagesForCategory(newPageCatId);
+      router.push(`/doc/${page.id}`);
+    }
+  };
+
+  const renderNewPageInput = (catId: string, depth: number) => {
+    if (newPageCatId !== catId) return null;
+    return (
+      <div key="__new" className="flex items-center gap-1 py-1 rounded-md" style={{ paddingLeft: `${24 + depth * 12}px`, paddingRight: "8px" }}>
+        <FileText size={12} className="shrink-0 text-green-400 opacity-60" />
+        <input
+          autoFocus
+          value={newPageTitle}
+          onChange={(e) => setNewPageTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); createInlinePage(); }
+            if (e.key === "Escape") { setNewPageCatId(null); setNewPageTitle(""); }
+          }}
+          onBlur={() => { if (!newPageCreating) { setNewPageCatId(null); setNewPageTitle(""); } }}
+          placeholder="Titre de la page…"
+          className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none placeholder-green-600"
+        />
+        {newPageCreating && <span className="text-[10px] text-green-400 shrink-0">…</span>}
+      </div>
+    );
+  };
+
   const renderPages = (catId: string, depth: number) => {
     const catPages = pages[catId] ?? [];
     return catPages.map((p) => {
@@ -219,6 +274,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
             }`}
           style={{ paddingLeft: `${12 + depth * 12}px` }}
           onClick={() => !isRenamingThisCat && toggle(cat.id)}
+          onDoubleClick={(e) => { e.preventDefault(); if (canManage && depth >= 1) startInlineNewPage(cat.id); }}
         >
           {hasChildren ? (
             isOpen ? <ChevronDown size={13} className="shrink-0 text-green-400" /> : <ChevronRight size={13} className="shrink-0 text-green-400" />
@@ -274,6 +330,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
 
         {isOpen && (
           <div>
+            {renderNewPageInput(cat.id, depth)}
             {renderPages(cat.id, depth)}
             {children.map((child) => renderCategory(child, depth + 1))}
           </div>
@@ -326,6 +383,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                     className="flex items-center gap-1 py-1.5 rounded-md cursor-pointer group transition-colors text-green-200 text-sm hover:bg-green-700/40"
                     style={{ paddingLeft: "24px" }}
                     onClick={() => !isRenamingThisJoueur && toggle(joueur.id)}
+                    onDoubleClick={(e) => { e.preventDefault(); if (canManage) startInlineNewPage(joueur.id); }}
                   >
                     {joueurPages.length > 0 ? (
                       isJoueurOpen ? <ChevronDown size={12} className="shrink-0 text-green-500" /> : <ChevronRight size={12} className="shrink-0 text-green-500" />
@@ -369,6 +427,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
 
                   {isJoueurOpen && !isRenamingThisJoueur && (
                     <div>
+                      {renderNewPageInput(joueur.id, 2)}
                       {renderPages(joueur.id, 2)}
                     </div>
                   )}
