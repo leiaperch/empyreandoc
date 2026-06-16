@@ -1,0 +1,343 @@
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import Sidebar from "@/components/Sidebar";
+import Link from "next/link";
+import { Plus, UserPlus, FileText, ChevronRight, Trash2 } from "lucide-react";
+
+interface Personnage {
+  id: string;
+  title: string;
+}
+
+interface Joueur {
+  id: string;
+  name: string;
+  icon: string | null;
+  personnages: Personnage[];
+}
+
+export default function JoueursPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [joueurs, setJoueurs] = useState<Joueur[]>([]);
+  const [personnagesCatId, setPersonnagesCatId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [createModal, setCreateModal] = useState(false);
+  const [joueurName, setJoueurName] = useState("");
+  const [joueurIcon, setJoueurIcon] = useState("");
+  const [personnageNames, setPersonnageNames] = useState<string[]>([""]);
+  const [creating, setCreating] = useState(false);
+
+  const [addPersoModal, setAddPersoModal] = useState<{ open: boolean; joueurId: string; joueurName: string }>({ open: false, joueurId: "", joueurName: "" });
+  const [newPersoName, setNewPersoName] = useState("");
+  const [addingPerso, setAddingPerso] = useState(false);
+
+  const role = (session?.user as { role?: string })?.role;
+
+  useEffect(() => {
+    if (status === "unauthenticated") router.push("/login");
+  }, [status, router]);
+
+  const fetchJoueurs = useCallback(async () => {
+    setLoading(true);
+    const catRes = await fetch("/api/categories");
+    if (!catRes.ok) { setLoading(false); return; }
+
+    const cats = await catRes.json();
+    const personnagesCat = cats.find((c: { slug: string }) => c.slug === "personnages");
+    if (!personnagesCat) { setLoading(false); return; }
+
+    setPersonnagesCatId(personnagesCat.id);
+
+    const joueursData: Joueur[] = [];
+    for (const joueur of personnagesCat.children ?? []) {
+      const pagesRes = await fetch(`/api/pages?categoryId=${joueur.id}`);
+      const pages = pagesRes.ok ? await pagesRes.json() : [];
+      joueursData.push({
+        id: joueur.id,
+        name: joueur.name,
+        icon: joueur.icon,
+        personnages: pages.map((p: { id: string; title: string }) => ({ id: p.id, title: p.title })),
+      });
+    }
+
+    setJoueurs(joueursData);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (status === "authenticated") fetchJoueurs();
+  }, [status, fetchJoueurs]);
+
+  const createJoueur = async () => {
+    if (!joueurName.trim() || !personnagesCatId) return;
+    setCreating(true);
+
+    const slug = `joueur-${joueurName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const catRes = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: joueurName.trim(),
+        slug,
+        icon: joueurIcon.trim() || "🧙",
+        parentId: personnagesCatId,
+      }),
+    });
+
+    if (!catRes.ok) { setCreating(false); return; }
+    const newCat = await catRes.json();
+
+    for (const name of personnageNames.filter((n) => n.trim())) {
+      await fetch("/api/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: name.trim(), categoryId: newCat.id }),
+      });
+    }
+
+    setCreating(false);
+    setCreateModal(false);
+    setJoueurName("");
+    setJoueurIcon("");
+    setPersonnageNames([""]);
+    fetchJoueurs();
+  };
+
+  const addPersonnage = async () => {
+    if (!newPersoName.trim() || !addPersoModal.joueurId) return;
+    setAddingPerso(true);
+
+    const res = await fetch("/api/pages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newPersoName.trim(), categoryId: addPersoModal.joueurId }),
+    });
+
+    if (res.ok) {
+      const page = await res.json();
+      setAddPersoModal({ open: false, joueurId: "", joueurName: "" });
+      setNewPersoName("");
+      router.push(`/doc/${page.id}`);
+    }
+    setAddingPerso(false);
+  };
+
+  if (status === "loading" || loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="animate-spin w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      <Sidebar />
+
+      <main className="flex-1 overflow-y-auto">
+        <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Joueurs</h1>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {joueurs.length} joueur{joueurs.length !== 1 ? "s" : ""} ·{" "}
+              {joueurs.reduce((acc, j) => acc + j.personnages.length, 0)} personnage{joueurs.reduce((acc, j) => acc + j.personnages.length, 0) !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {role === "SCENAR" && (
+            <button
+              onClick={() => setCreateModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <UserPlus size={16} />
+              Nouveau joueur
+            </button>
+          )}
+        </header>
+
+        <div className="px-6 py-6">
+          {joueurs.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">
+              <UserPlus size={52} className="mx-auto mb-4 opacity-25" />
+              <p className="text-lg font-medium text-gray-500">Aucun joueur pour l&apos;instant</p>
+              {role === "SCENAR" && (
+                <p className="text-sm mt-2">Créez le premier joueur avec le bouton ci-dessus.</p>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {joueurs.map((joueur) => (
+                <div key={joueur.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:border-green-200 hover:shadow-lg hover:shadow-green-50 transition-all flex flex-col">
+                  <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-50">
+                    <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center text-2xl shrink-0">
+                      {joueur.icon ?? "🧙"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h2 className="font-semibold text-gray-900 truncate">{joueur.name}</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {joueur.personnages.length} personnage{joueur.personnages.length !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    {role === "SCENAR" && (
+                      <button
+                        onClick={() => setAddPersoModal({ open: true, joueurId: joueur.id, joueurName: joueur.name })}
+                        className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors shrink-0"
+                        title="Nouveau personnage"
+                      >
+                        <Plus size={15} />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    {joueur.personnages.length === 0 ? (
+                      <p className="text-sm text-gray-400 px-5 py-4 italic">Aucun personnage</p>
+                    ) : (
+                      joueur.personnages.map((p) => (
+                        <Link
+                          key={p.id}
+                          href={`/doc/${p.id}`}
+                          className="flex items-center gap-3 px-5 py-3 hover:bg-green-50 group transition-colors border-b border-gray-50 last:border-0"
+                        >
+                          <FileText size={13} className="text-gray-300 group-hover:text-green-400 shrink-0 transition-colors" />
+                          <span className="text-sm text-gray-700 group-hover:text-gray-900 truncate flex-1">{p.title}</span>
+                          <ChevronRight size={13} className="text-gray-300 group-hover:text-green-400 shrink-0 transition-colors" />
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Modale création joueur */}
+      {createModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Nouveau joueur</h2>
+            <p className="text-sm text-gray-500 mb-5">Crée le joueur et ses personnages en une seule étape.</p>
+
+            <div className="space-y-4">
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom du joueur</label>
+                  <input
+                    autoFocus
+                    value={joueurName}
+                    onChange={(e) => setJoueurName(e.target.value)}
+                    placeholder="ex : Alice, Bob…"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
+                  />
+                </div>
+                <div className="w-20">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Icône</label>
+                  <input
+                    value={joueurIcon}
+                    onChange={(e) => setJoueurIcon(e.target.value)}
+                    placeholder="🧙"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Personnages <span className="font-normal text-gray-400">(optionnel)</span>
+                </label>
+                <div className="space-y-2">
+                  {personnageNames.map((name, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input
+                        value={name}
+                        onChange={(e) => setPersonnageNames((prev) => prev.map((n, idx) => idx === i ? e.target.value : n))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            setPersonnageNames((prev) => [...prev, ""]);
+                          }
+                        }}
+                        placeholder={`Personnage ${i + 1}…`}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
+                      />
+                      {personnageNames.length > 1 && (
+                        <button
+                          onClick={() => setPersonnageNames((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setPersonnageNames((prev) => [...prev, ""])}
+                  className="mt-2 flex items-center gap-1.5 text-sm text-green-600 hover:text-green-700 transition-colors"
+                >
+                  <Plus size={14} />
+                  Ajouter un personnage
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => { setCreateModal(false); setJoueurName(""); setJoueurIcon(""); setPersonnageNames([""]); }}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={createJoueur}
+                disabled={creating || !joueurName.trim()}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {creating ? "Création…" : "Créer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modale ajout personnage */}
+      {addPersoModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 mx-4">
+            <h2 className="text-base font-bold text-gray-900 mb-1">Nouveau personnage</h2>
+            <p className="text-sm text-gray-500 mb-4">Pour {addPersoModal.joueurName}</p>
+            <input
+              autoFocus
+              value={newPersoName}
+              onChange={(e) => setNewPersoName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addPersonnage()}
+              placeholder="Nom du personnage…"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setAddPersoModal({ open: false, joueurId: "", joueurName: "" }); setNewPersoName(""); }}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={addPersonnage}
+                disabled={addingPerso || !newPersoName.trim()}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {addingPerso ? "Création…" : "Créer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

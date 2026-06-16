@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users } from "lucide-react";
 
 interface Category {
   id: string;
@@ -176,6 +176,13 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         >
           <FolderOpen size={15} />
           Tableau de bord
+        </Link>
+        <Link
+          href="/joueurs"
+          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-green-200 hover:bg-green-700/40 hover:text-green-100 transition-colors"
+        >
+          <Users size={15} />
+          Joueurs
         </Link>
 
         <div className="mt-2">
