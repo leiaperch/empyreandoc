@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
+import EmojiPicker from "@/components/EmojiPicker";
 import Link from "next/link";
 import { Plus, UserPlus, FileText, ChevronRight, Trash2, Tag, X } from "lucide-react";
 
@@ -403,10 +404,9 @@ export default function JoueursPage() {
                   <input autoFocus value={joueurName} onChange={(e) => setJoueurName(e.target.value)} placeholder="ex : Alice, Bob…"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition" />
                 </div>
-                <div className="w-20">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Icône</label>
-                  <input value={joueurIcon} onChange={(e) => setJoueurIcon(e.target.value)} placeholder="🧙"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition text-center" />
+                  <EmojiPicker value={joueurIcon} onChange={setJoueurIcon} placeholder="🧙" />
                 </div>
               </div>
               <div>

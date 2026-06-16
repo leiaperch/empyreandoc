@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X } from "lucide-react";
+import EmojiPicker from "./EmojiPicker";
 
 interface Category {
   id: string;
@@ -69,7 +70,10 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   useEffect(() => {
     categories.forEach((cat) => {
       fetchPagesForCategory(cat.id);
-      (cat.children ?? []).forEach((child) => fetchPagesForCategory(child.id));
+      (cat.children ?? []).forEach((child) => {
+        fetchPagesForCategory(child.id);
+        (child.children ?? []).forEach((grandchild) => fetchPagesForCategory(grandchild.id));
+      });
     });
   }, [categories, fetchPagesForCategory]);
 
@@ -135,7 +139,6 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
       body: JSON.stringify({ title: renamePageTitle.trim() }),
     });
     setRenamePageId(null);
-    // Update local state immediately
     setPages((prev) => {
       const updated = { ...prev };
       for (const catId in updated) {
@@ -153,11 +156,58 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
     setRenamePageId(null);
   };
 
+  const renderPages = (catId: string, depth: number) => {
+    const catPages = pages[catId] ?? [];
+    return catPages.map((p) => {
+      const isRenamingThisPage = renamePageId === p.id;
+      if (isRenamingThisPage) {
+        return (
+          <div key={p.id} className="flex items-center gap-1 py-1 rounded-md" style={{ paddingLeft: `${24 + depth * 12}px`, paddingRight: "8px" }}>
+            <input
+              autoFocus
+              value={renamePageTitle}
+              onChange={(e) => setRenamePageTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveRenamePage(e); if (e.key === "Escape") cancelRename(); }}
+              className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+            />
+            <button onClick={saveRenamePage} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
+            <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
+          </div>
+        );
+      }
+      return (
+        <div key={p.id} className="group flex items-center rounded-md transition-colors" style={{ paddingLeft: `${24 + depth * 12}px` }}>
+          <Link
+            href={`/doc/${p.id}`}
+            className={`flex items-center gap-2 py-1 flex-1 min-w-0 text-sm transition-colors
+              ${activePage === p.id ? "text-white font-medium" : "text-green-300 hover:text-green-100"}`}
+          >
+            <FileText size={12} className="shrink-0 opacity-60" />
+            <span className="truncate">{p.title}</span>
+          </Link>
+          {canManage && (
+            <button
+              onClick={(e) => startRenamePage(p, e)}
+              className="opacity-0 group-hover:opacity-100 p-0.5 mr-1 rounded hover:bg-green-600 text-green-400 hover:text-green-100 transition-all shrink-0"
+              title="Renommer"
+            >
+              <Pencil size={10} />
+            </button>
+          )}
+        </div>
+      );
+    });
+  };
+
   const renderCategory = (cat: Category, depth = 0): React.ReactNode => {
-    if (depth === 0 && cat.slug === "personnages") return null;
+    // "personnages" at depth 0 → render as "Joueurs" section with joueurs as children
+    if (depth === 0 && cat.slug === "personnages") {
+      return renderPersonnagesSection(cat);
+    }
+
     const isOpen = expanded[cat.id];
-    const catPages = pages[cat.id] ?? [];
     const children = cat.children ?? [];
+    const catPages = pages[cat.id] ?? [];
     const hasChildren = children.length > 0 || catPages.length > 0;
     const isRenamingThisCat = renameCatId === cat.id;
 
@@ -165,8 +215,10 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
       <div key={cat.id}>
         <div
           className={`flex items-center gap-1 px-3 py-1.5 rounded-md cursor-pointer group transition-colors
-            ${depth === 0 ? "text-green-100 font-semibold text-xs uppercase tracking-wide mt-3" : "text-green-200 text-sm hover:bg-green-700/40"}
-          `}
+            ${depth === 0
+              ? "text-green-100 font-semibold text-xs uppercase tracking-wide mt-3"
+              : "text-green-200 text-sm hover:bg-green-700/40"
+            }`}
           style={{ paddingLeft: `${12 + depth * 12}px` }}
           onClick={() => !isRenamingThisCat && toggle(cat.id)}
         >
@@ -176,21 +228,16 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
 
           {isRenamingThisCat ? (
             <div className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+              <EmojiPicker value={renameCatIcon} onChange={setRenameCatIcon} placeholder="📄" />
               <input
                 autoFocus
-                value={renameCatIcon}
-                onChange={(e) => setRenameCatIcon(e.target.value)}
-                className="w-8 text-center bg-green-800 text-green-100 border border-green-600 rounded px-1 py-0.5 text-xs outline-none"
-                placeholder="📄"
-              />
-              <input
                 value={renameCatName}
                 onChange={(e) => setRenameCatName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") saveRenameCat(e); if (e.key === "Escape") cancelRename(); }}
                 className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
               />
-              <button onClick={saveRenameCat} className="p-0.5 text-green-300 hover:text-green-100"><Check size={11} /></button>
-              <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200"><X size={11} /></button>
+              <button onClick={saveRenameCat} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
+              <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
             </div>
           ) : (
             <>
@@ -201,20 +248,13 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
               {canManage && (
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-auto shrink-0">
                   {depth >= 1 && (
-                    <button
-                      onClick={(e) => startRenameCat(cat, e)}
-                      className="p-0.5 rounded hover:bg-green-600 transition-colors"
-                      title="Renommer"
-                    >
+                    <button onClick={(e) => startRenameCat(cat, e)} className="p-0.5 rounded hover:bg-green-600 transition-colors" title="Renommer">
                       <Pencil size={11} />
                     </button>
                   )}
                   {depth === 0 && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name });
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name }); }}
                       className="p-0.5 rounded hover:bg-green-600 transition-colors"
                       title="Nouvelle sous-rubrique"
                     >
@@ -236,49 +276,107 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
 
         {isOpen && (
           <div>
-            {catPages.map((p) => {
-              const isRenamingThisPage = renamePageId === p.id;
-              if (isRenamingThisPage) {
-                return (
-                  <div key={p.id} className="flex items-center gap-1 py-1 rounded-md" style={{ paddingLeft: `${24 + depth * 12}px`, paddingRight: "8px" }}>
-                    <input
-                      autoFocus
-                      value={renamePageTitle}
-                      onChange={(e) => setRenamePageTitle(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") saveRenamePage(e); if (e.key === "Escape") cancelRename(); }}
-                      className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
-                    />
-                    <button onClick={saveRenamePage} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
-                    <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
-                  </div>
-                );
-              }
+            {renderPages(cat.id, depth)}
+            {children.map((child) => renderCategory(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Special rendering for the "personnages" root category → shows joueurs + their pages
+  const renderPersonnagesSection = (cat: Category) => {
+    const joueurs = cat.children ?? [];
+    const isOpen = expanded[cat.id] ?? true;
+
+    return (
+      <div key={cat.id}>
+        {/* Section header */}
+        <div
+          className="flex items-center gap-1 px-3 py-1.5 rounded-md cursor-pointer group transition-colors text-green-100 font-semibold text-xs uppercase tracking-wide mt-3"
+          onClick={() => toggle(cat.id)}
+        >
+          {isOpen ? <ChevronDown size={13} className="shrink-0 text-green-400" /> : <ChevronRight size={13} className="shrink-0 text-green-400" />}
+          <Users size={13} className="mr-1 text-green-400" />
+          <span className="truncate flex-1">Joueurs</span>
+          {canManage && (
+            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-auto shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name }); }}
+                className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                title="Nouveau joueur"
+              >
+                <FolderPlus size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {isOpen && (
+          <div>
+            {joueurs.length === 0 && (
+              <p className="text-xs text-green-600 italic px-8 py-1">Aucun joueur</p>
+            )}
+            {joueurs.map((joueur) => {
+              const isJoueurOpen = expanded[joueur.id] ?? true;
+              const joueurPages = pages[joueur.id] ?? [];
+              const isRenamingThisJoueur = renameCatId === joueur.id;
+
               return (
-                <div key={p.id} className="group flex items-center rounded-md transition-colors" style={{ paddingLeft: `${24 + depth * 12}px` }}>
-                  <Link
-                    href={`/doc/${p.id}`}
-                    className={`flex items-center gap-2 py-1 flex-1 min-w-0 text-sm transition-colors
-                      ${activePage === p.id
-                        ? "text-white"
-                        : "text-green-300 hover:text-green-100"
-                      }`}
+                <div key={joueur.id}>
+                  <div
+                    className="flex items-center gap-1 py-1.5 rounded-md cursor-pointer group transition-colors text-green-200 text-sm hover:bg-green-700/40"
+                    style={{ paddingLeft: "24px" }}
+                    onClick={() => !isRenamingThisJoueur && toggle(joueur.id)}
                   >
-                    <FileText size={12} className="shrink-0" />
-                    <span className="truncate">{p.title}</span>
-                  </Link>
-                  {canManage && (
-                    <button
-                      onClick={(e) => startRenamePage(p, e)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 mr-1 rounded hover:bg-green-600 text-green-400 hover:text-green-100 transition-all shrink-0"
-                      title="Renommer"
-                    >
-                      <Pencil size={10} />
-                    </button>
+                    {joueurPages.length > 0 ? (
+                      isJoueurOpen ? <ChevronDown size={12} className="shrink-0 text-green-500" /> : <ChevronRight size={12} className="shrink-0 text-green-500" />
+                    ) : <span className="w-3" />}
+
+                    {isRenamingThisJoueur ? (
+                      <div className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                        <EmojiPicker value={renameCatIcon} onChange={setRenameCatIcon} placeholder="🧙" />
+                        <input
+                          autoFocus
+                          value={renameCatName}
+                          onChange={(e) => setRenameCatName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveRenameCat(e); if (e.key === "Escape") cancelRename(); }}
+                          className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+                        />
+                        <button onClick={saveRenameCat} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
+                        <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="mr-1 text-base leading-none">{joueur.icon ?? "🧙"}</span>
+                        <span className="truncate flex-1 font-medium">{joueur.name}</span>
+                        <span className="text-[10px] text-green-600 shrink-0 mr-1">{joueurPages.length}</span>
+                        {canManage && (
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0">
+                            <button onClick={(e) => startRenameCat(joueur, e)} className="p-0.5 rounded hover:bg-green-600 transition-colors" title="Renommer">
+                              <Pencil size={11} />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onNewPage?.(joueur.id); }}
+                              className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                              title="Nouveau personnage"
+                            >
+                              <Plus size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {isJoueurOpen && !isRenamingThisJoueur && (
+                    <div>
+                      {renderPages(joueur.id, 2)}
+                    </div>
                   )}
                 </div>
               );
             })}
-            {children.map((child) => renderCategory(child, depth + 1))}
           </div>
         )}
       </div>
@@ -348,13 +446,8 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Icône (emoji)</label>
-                <input
-                  value={subCatIcon}
-                  onChange={(e) => setSubCatIcon(e.target.value)}
-                  placeholder="ex : 🧙 🗡️ 🎲"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Icône</label>
+                <EmojiPicker value={subCatIcon} onChange={setSubCatIcon} placeholder="Choisir" />
               </div>
             </div>
             <div className="flex gap-3 mt-5">
