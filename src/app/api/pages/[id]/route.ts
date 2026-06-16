@@ -47,7 +47,7 @@ export async function PUT(
 
   const { role } = session.user;
   const { id } = await params;
-  const { title, content, archived, tags } = await req.json();
+  const { title, content, archived, tags, linkedPageIds } = await req.json();
 
   const page = await prisma.page.findUnique({ where: { id }, include: { category: true } });
   if (!page) return NextResponse.json({ error: "Page introuvable." }, { status: 404 });
@@ -62,6 +62,7 @@ export async function PUT(
       ...(content !== undefined && { content }),
       ...(archived !== undefined && { archived }),
       ...(tags !== undefined && { tags }),
+      ...(linkedPageIds !== undefined && { linkedPageIds }),
     },
     include: {
       category: true,
@@ -83,8 +84,8 @@ export async function DELETE(
   const { role } = session.user;
   const { id } = await params;
 
-  if (role !== "SCENAR") {
-    return NextResponse.json({ error: "Seuls les scénaristes peuvent supprimer des pages." }, { status: 403 });
+  if (role !== "ADMIN") {
+    return NextResponse.json({ error: "Seuls les administrateurs peuvent supprimer des pages." }, { status: 403 });
   }
 
   const page = await prisma.page.findUnique({ where: { id } });

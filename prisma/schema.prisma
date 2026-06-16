@@ -12,6 +12,7 @@ datasource db {
 enum Role {
   NARRA
   SCENAR
+  ADMIN
 }
 
 model User {
@@ -49,8 +50,9 @@ model Page {
   slug        String       @unique
   published   Boolean      @default(true)
   archived    Boolean      @default(false)
-  tags        String       @default("")
-  categoryId  String
+  tags           String       @default("")
+  linkedPageIds  String       @default("")
+  categoryId     String
   category    Category     @relation(fields: [categoryId], references: [id])
   authorId    String
   author      User         @relation(fields: [authorId], references: [id])
