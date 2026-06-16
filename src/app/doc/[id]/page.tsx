@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Sidebar from "@/components/Sidebar";
 import AttachmentPanel from "@/components/AttachmentPanel";
-import { ArrowLeft, Save, Check, Loader2, Trash2, Archive } from "lucide-react";
+import { ArrowLeft, Save, Check, Loader2, Trash2, Archive, Pencil, Eye, X, Plus } from "lucide-react";
 import Link from "next/link";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
@@ -23,6 +23,7 @@ interface PageData {
   id: string;
   title: string;
   content: string;
+  tags: string;
   archived: boolean;
   category: { id: string; name: string; icon: string | null; restricted: boolean };
   author: { id: string; name: string; role: string };
@@ -32,6 +33,22 @@ interface PageData {
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+const TAG_COLORS = [
+  "bg-purple-100 text-purple-700 border-purple-200",
+  "bg-blue-100 text-blue-700 border-blue-200",
+  "bg-amber-100 text-amber-800 border-amber-200",
+  "bg-rose-100 text-rose-700 border-rose-200",
+  "bg-teal-100 text-teal-700 border-teal-200",
+  "bg-orange-100 text-orange-700 border-orange-200",
+  "bg-indigo-100 text-indigo-700 border-indigo-200",
+  "bg-green-100 text-green-700 border-green-200",
+];
+function tagColor(tag: string) {
+  let h = 0;
+  for (const c of tag) h = (h * 31 + c.charCodeAt(0)) & 0xff;
+  return TAG_COLORS[h % TAG_COLORS.length];
+}
+
 export default function DocPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const { data: session, status } = useSession();
@@ -39,10 +56,14 @@ export default function DocPage({ params }: { params: { id: string } }) {
   const [page, setPage] = useState<PageData | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
 
   const role = (session?.user as { role?: string })?.role;
 
@@ -53,15 +74,13 @@ export default function DocPage({ params }: { params: { id: string } }) {
   const fetchPage = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/pages/${id}`);
-    if (res.status === 403) {
-      router.push("/dashboard");
-      return;
-    }
+    if (res.status === 403) { router.push("/dashboard"); return; }
     if (res.ok) {
       const data: PageData = await res.json();
       setPage(data);
       setTitle(data.title);
       setContent(data.content);
+      setTags(data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : []);
       setAttachments(data.attachments);
     }
     setLoading(false);
@@ -71,16 +90,20 @@ export default function DocPage({ params }: { params: { id: string } }) {
     if (status === "authenticated") fetchPage();
   }, [status, fetchPage]);
 
-  const save = useCallback(async (t: string, c: string) => {
+  const save = useCallback(async (t: string, c: string, tgs?: string[]) => {
     setSaveStatus("saving");
     const res = await fetch(`/api/pages/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: t, content: c }),
+      body: JSON.stringify({
+        title: t,
+        content: c,
+        tags: (tgs ?? tags).join(","),
+      }),
     });
     setSaveStatus(res.ok ? "saved" : "error");
     if (res.ok) setTimeout(() => setSaveStatus("idle"), 2000);
-  }, [id]);
+  }, [id, tags]);
 
   const handleContentChange = useCallback((newContent: string) => {
     setContent(newContent);
@@ -91,6 +114,22 @@ export default function DocPage({ params }: { params: { id: string } }) {
   const handleTitleBlur = useCallback(() => {
     if (page && title !== page.title) save(title, content);
   }, [page, title, content, save]);
+
+  const addTag = () => {
+    const raw = tagInput.trim().replace(/,+$/, "");
+    const newTags = raw.split(",").map((t) => t.trim()).filter((t) => t && !tags.includes(t));
+    if (!newTags.length) return;
+    const updated = [...tags, ...newTags];
+    setTags(updated);
+    setTagInput("");
+    save(title, content, updated);
+  };
+
+  const removeTag = (tag: string) => {
+    const updated = tags.filter((t) => t !== tag);
+    setTags(updated);
+    save(title, content, updated);
+  };
 
   const handleDelete = async () => {
     if (!confirm("Supprimer cette page définitivement ?")) return;
@@ -131,7 +170,6 @@ export default function DocPage({ params }: { params: { id: string } }) {
       <Sidebar activePage={id} />
 
       <main className="flex-1 overflow-y-auto">
-        {/* Toolbar */}
         <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4">
           <Link href="/dashboard" className="text-gray-400 hover:text-gray-600 transition-colors">
             <ArrowLeft size={18} />
@@ -149,35 +187,42 @@ export default function DocPage({ params }: { params: { id: string } }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Save status */}
-            <span className="text-xs text-gray-400 flex items-center gap-1">
-              {saveStatus === "saving" && <><Loader2 size={12} className="animate-spin" /> Enregistrement…</>}
-              {saveStatus === "saved" && <><Check size={12} className="text-green-500" /> Enregistré</>}
-              {saveStatus === "error" && <span className="text-red-500">Erreur d&apos;enregistrement</span>}
-            </span>
+            {editing && (
+              <span className="text-xs text-gray-400 flex items-center gap-1">
+                {saveStatus === "saving" && <><Loader2 size={12} className="animate-spin" /> Enregistrement…</>}
+                {saveStatus === "saved" && <><Check size={12} className="text-green-500" /> Enregistré</>}
+                {saveStatus === "error" && <span className="text-red-500">Erreur</span>}
+              </span>
+            )}
+
+            {editing && (
+              <button
+                onClick={() => save(title, content)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <Save size={14} />Sauvegarder
+              </button>
+            )}
 
             <button
-              onClick={() => save(title, content)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+              onClick={() => setEditing((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                editing
+                  ? "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200"
+                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+              }`}
             >
-              <Save size={14} />
-              Sauvegarder
+              {editing ? <><Eye size={14} />Lecture</> : <><Pencil size={14} />Éditer</>}
             </button>
 
-            {role === "SCENAR" && (
+            {role === "SCENAR" && editing && (
               <>
-                <button
-                  onClick={handleArchive}
-                  title={page.archived ? "Désarchiver" : "Archiver"}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
+                <button onClick={handleArchive} title={page.archived ? "Désarchiver" : "Archiver"}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                   <Archive size={16} />
                 </button>
-                <button
-                  onClick={handleDelete}
-                  title="Supprimer"
-                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                >
+                <button onClick={handleDelete} title="Supprimer"
+                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                   <Trash2 size={16} />
                 </button>
               </>
@@ -185,42 +230,74 @@ export default function DocPage({ params }: { params: { id: string } }) {
           </div>
         </header>
 
-        {/* Document */}
         <div className="max-w-4xl mx-auto px-6 py-8">
-          {/* Title */}
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleBlur}
-            placeholder="Titre de la page…"
-            className="w-full text-3xl font-bold text-gray-900 bg-transparent border-none outline-none placeholder-gray-300 mb-6"
-          />
+          {/* Titre */}
+          {editing ? (
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleTitleBlur}
+              placeholder="Titre de la page…"
+              className="w-full text-3xl font-bold text-gray-900 bg-transparent border-none outline-none placeholder-gray-300 mb-3"
+            />
+          ) : (
+            <h1 className="text-3xl font-bold text-gray-900 mb-3">{title || "Sans titre"}</h1>
+          )}
 
-          {/* Editor */}
-          <Editor
-            content={content}
-            onChange={handleContentChange}
-          />
+          {/* Tags */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-6 min-h-[28px]">
+            {tags.map((tag) => (
+              <span key={tag} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${tagColor(tag)}`}>
+                {tag}
+                {editing && (
+                  <button onClick={() => removeTag(tag)} className="hover:opacity-70 transition-opacity ml-0.5">
+                    <X size={10} />
+                  </button>
+                )}
+              </span>
+            ))}
+            {editing && (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={tagInputRef}
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTag(); } }}
+                  placeholder="Ajouter un tag…"
+                  className="text-xs px-2 py-1 border border-dashed border-gray-300 rounded-full focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-300 w-32 transition"
+                />
+                <button onClick={addTag} className="p-1 text-gray-400 hover:text-green-600 transition-colors">
+                  <Plus size={13} />
+                </button>
+              </div>
+            )}
+          </div>
 
-          {/* Attachments */}
+          {/* Contenu */}
+          {editing ? (
+            <Editor content={content} onChange={handleContentChange} />
+          ) : (
+            <div
+              className="prose prose-green max-w-none min-h-[200px] text-gray-800"
+              dangerouslySetInnerHTML={{ __html: content || '<p class="text-gray-400 italic">Aucun contenu — cliquez sur Éditer pour commencer.</p>' }}
+            />
+          )}
+
+          {/* Pièces jointes */}
           <AttachmentPanel
             pageId={id}
             attachments={attachments}
             onAttachmentsChange={setAttachments}
           />
 
-          {/* Metadata */}
+          {/* Métadonnées */}
           <div className="mt-8 pt-6 border-t border-gray-100 text-xs text-gray-400 flex items-center gap-4">
             <span>Auteur : {page.author.name}</span>
             <span>·</span>
             <span>
               Dernière modification :{" "}
               {new Date(page.updatedAt).toLocaleDateString("fr-FR", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
+                day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
               })}
             </span>
           </div>

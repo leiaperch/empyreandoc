@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
 
   const { id: userId, role } = session.user;
-  const { title, categoryId, content } = await req.json();
+  const { title, categoryId, content, tags } = await req.json();
 
   if (!title || !categoryId) {
     return NextResponse.json({ error: "Titre et rubrique requis." }, { status: 400 });
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
   const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
   const page = await prisma.page.create({
-    data: { title, content: content ?? "", slug, categoryId, authorId: userId },
+    data: { title, content: content ?? "", slug, categoryId, authorId: userId, tags: tags ?? "" },
     include: { category: true, author: { select: { id: true, name: true, role: true } } },
   });
 

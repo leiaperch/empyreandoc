@@ -47,7 +47,7 @@ export async function PUT(
 
   const { role } = session.user;
   const { id } = await params;
-  const { title, content, archived } = await req.json();
+  const { title, content, archived, tags } = await req.json();
 
   const page = await prisma.page.findUnique({ where: { id }, include: { category: true } });
   if (!page) return NextResponse.json({ error: "Page introuvable." }, { status: 404 });
@@ -61,6 +61,7 @@ export async function PUT(
       ...(title !== undefined && { title }),
       ...(content !== undefined && { content }),
       ...(archived !== undefined && { archived }),
+      ...(tags !== undefined && { tags }),
     },
     include: {
       category: true,

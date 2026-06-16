@@ -2,14 +2,15 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
-import { Plus, UserPlus, FileText, ChevronRight, Trash2 } from "lucide-react";
+import { Plus, UserPlus, FileText, ChevronRight, Trash2, Tag, X } from "lucide-react";
 
 interface Personnage {
   id: string;
   title: string;
+  tags: string;
 }
 
 interface Joueur {
@@ -19,12 +20,35 @@ interface Joueur {
   personnages: Personnage[];
 }
 
+const TAG_COLORS = [
+  "bg-purple-100 text-purple-700",
+  "bg-blue-100 text-blue-700",
+  "bg-amber-100 text-amber-800",
+  "bg-rose-100 text-rose-700",
+  "bg-teal-100 text-teal-700",
+  "bg-orange-100 text-orange-700",
+  "bg-indigo-100 text-indigo-700",
+  "bg-green-100 text-green-700",
+];
+
+function tagColor(tag: string) {
+  let h = 0;
+  for (const c of tag) h = (h * 31 + c.charCodeAt(0)) & 0xff;
+  return TAG_COLORS[h % TAG_COLORS.length];
+}
+
+function parseTags(raw: string): string[] {
+  return raw.split(",").map((t) => t.trim()).filter(Boolean);
+}
+
 export default function JoueursPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [joueurs, setJoueurs] = useState<Joueur[]>([]);
   const [personnagesCatId, setPersonnagesCatId] = useState<string | null>(null);
+  const [plotsPersoId, setPlotsPersoId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const [createModal, setCreateModal] = useState(false);
   const [joueurName, setJoueurName] = useState("");
@@ -49,9 +73,11 @@ export default function JoueursPage() {
 
     const cats = await catRes.json();
     const personnagesCat = cats.find((c: { slug: string }) => c.slug === "personnages");
-    if (!personnagesCat) { setLoading(false); return; }
+    const plotsCat = cats.find((c: { slug: string }) => c.slug === "plots-personnage");
 
+    if (!personnagesCat) { setLoading(false); return; }
     setPersonnagesCatId(personnagesCat.id);
+    if (plotsCat) setPlotsPersoId(plotsCat.id);
 
     const joueursData: Joueur[] = [];
     for (const joueur of personnagesCat.children ?? []) {
@@ -61,7 +87,11 @@ export default function JoueursPage() {
         id: joueur.id,
         name: joueur.name,
         icon: joueur.icon,
-        personnages: pages.map((p: { id: string; title: string }) => ({ id: p.id, title: p.title })),
+        personnages: pages.map((p: { id: string; title: string; tags: string }) => ({
+          id: p.id,
+          title: p.title,
+          tags: p.tags ?? "",
+        })),
       });
     }
 
@@ -73,6 +103,23 @@ export default function JoueursPage() {
     if (status === "authenticated") fetchJoueurs();
   }, [status, fetchJoueurs]);
 
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const j of joueurs)
+      for (const p of j.personnages)
+        for (const t of parseTags(p.tags)) set.add(t);
+    return Array.from(set).sort();
+  }, [joueurs]);
+
+  const createPersonnagePage = async (name: string, categoryId: string) => {
+    const res = await fetch("/api/pages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: name.trim(), categoryId }),
+    });
+    return res.ok ? await res.json() : null;
+  };
+
   const createJoueur = async () => {
     if (!joueurName.trim() || !personnagesCatId) return;
     setCreating(true);
@@ -81,23 +128,15 @@ export default function JoueursPage() {
     const catRes = await fetch("/api/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: joueurName.trim(),
-        slug,
-        icon: joueurIcon.trim() || "🧙",
-        parentId: personnagesCatId,
-      }),
+      body: JSON.stringify({ name: joueurName.trim(), slug, icon: joueurIcon.trim() || "🧙", parentId: personnagesCatId }),
     });
 
     if (!catRes.ok) { setCreating(false); return; }
     const newCat = await catRes.json();
 
     for (const name of personnageNames.filter((n) => n.trim())) {
-      await fetch("/api/pages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: name.trim(), categoryId: newCat.id }),
-      });
+      await createPersonnagePage(name, newCat.id);
+      if (plotsPersoId) await createPersonnagePage(name, plotsPersoId);
     }
 
     setCreating(false);
@@ -112,20 +151,24 @@ export default function JoueursPage() {
     if (!newPersoName.trim() || !addPersoModal.joueurId) return;
     setAddingPerso(true);
 
-    const res = await fetch("/api/pages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newPersoName.trim(), categoryId: addPersoModal.joueurId }),
-    });
+    const page = await createPersonnagePage(newPersoName, addPersoModal.joueurId);
+    if (plotsPersoId) await createPersonnagePage(newPersoName, plotsPersoId);
 
-    if (res.ok) {
-      const page = await res.json();
+    setAddingPerso(false);
+    if (page) {
       setAddPersoModal({ open: false, joueurId: "", joueurName: "" });
       setNewPersoName("");
       router.push(`/doc/${page.id}`);
     }
-    setAddingPerso(false);
   };
+
+  const filteredJoueurs = useMemo(() => {
+    if (!activeTag) return joueurs;
+    return joueurs.map((j) => ({
+      ...j,
+      personnages: j.personnages.filter((p) => parseTags(p.tags).includes(activeTag)),
+    })).filter((j) => j.personnages.length > 0);
+  }, [joueurs, activeTag]);
 
   if (status === "loading" || loading) {
     return (
@@ -159,18 +202,46 @@ export default function JoueursPage() {
           )}
         </header>
 
-        <div className="px-6 py-6">
+        {/* Filtre par tag */}
+        {allTags.length > 0 && (
+          <div className="px-6 pt-4 flex items-center gap-2 flex-wrap">
+            <Tag size={13} className="text-gray-400 shrink-0" />
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                  activeTag === tag
+                    ? "border-green-500 bg-green-600 text-white"
+                    : `${tagColor(tag)} border-transparent hover:border-current`
+                }`}
+              >
+                {tag}
+                {activeTag === tag && <X size={10} />}
+              </button>
+            ))}
+            {activeTag && (
+              <button onClick={() => setActiveTag(null)} className="text-xs text-gray-400 hover:text-gray-600 ml-1 transition-colors">
+                Tout afficher
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="px-6 py-5">
           {joueurs.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <UserPlus size={52} className="mx-auto mb-4 opacity-25" />
               <p className="text-lg font-medium text-gray-500">Aucun joueur pour l&apos;instant</p>
-              {role === "SCENAR" && (
-                <p className="text-sm mt-2">Créez le premier joueur avec le bouton ci-dessus.</p>
-              )}
+              {role === "SCENAR" && <p className="text-sm mt-2">Créez le premier joueur avec le bouton ci-dessus.</p>}
+            </div>
+          ) : filteredJoueurs.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <p className="text-sm">Aucun personnage avec le tag <strong>&quot;{activeTag}&quot;</strong>.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {joueurs.map((joueur) => (
+              {filteredJoueurs.map((joueur) => (
                 <div key={joueur.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden hover:border-green-200 hover:shadow-lg hover:shadow-green-50 transition-all flex flex-col">
                   <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-50">
                     <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center text-2xl shrink-0">
@@ -178,9 +249,7 @@ export default function JoueursPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h2 className="font-semibold text-gray-900 truncate">{joueur.name}</h2>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {joueur.personnages.length} personnage{joueur.personnages.length !== 1 ? "s" : ""}
-                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">{joueur.personnages.length} personnage{joueur.personnages.length !== 1 ? "s" : ""}</p>
                     </div>
                     {role === "SCENAR" && (
                       <button
@@ -193,21 +262,33 @@ export default function JoueursPage() {
                     )}
                   </div>
 
-                  <div className="flex-1">
+                  <div className="flex-1 divide-y divide-gray-50">
                     {joueur.personnages.length === 0 ? (
                       <p className="text-sm text-gray-400 px-5 py-4 italic">Aucun personnage</p>
                     ) : (
-                      joueur.personnages.map((p) => (
-                        <Link
-                          key={p.id}
-                          href={`/doc/${p.id}`}
-                          className="flex items-center gap-3 px-5 py-3 hover:bg-green-50 group transition-colors border-b border-gray-50 last:border-0"
-                        >
-                          <FileText size={13} className="text-gray-300 group-hover:text-green-400 shrink-0 transition-colors" />
-                          <span className="text-sm text-gray-700 group-hover:text-gray-900 truncate flex-1">{p.title}</span>
-                          <ChevronRight size={13} className="text-gray-300 group-hover:text-green-400 shrink-0 transition-colors" />
-                        </Link>
-                      ))
+                      joueur.personnages.map((p) => {
+                        const tags = parseTags(p.tags);
+                        return (
+                          <Link
+                            key={p.id}
+                            href={`/doc/${p.id}`}
+                            className="flex items-start gap-3 px-5 py-3 hover:bg-green-50 group transition-colors"
+                          >
+                            <FileText size={13} className="text-gray-300 group-hover:text-green-400 shrink-0 transition-colors mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm text-gray-700 group-hover:text-gray-900 block truncate">{p.title}</span>
+                              {tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {tags.map((t) => (
+                                    <span key={t} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${tagColor(t)}`}>{t}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <ChevronRight size={13} className="text-gray-300 group-hover:text-green-400 shrink-0 transition-colors mt-0.5" />
+                          </Link>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -223,30 +304,20 @@ export default function JoueursPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold text-gray-900 mb-1">Nouveau joueur</h2>
             <p className="text-sm text-gray-500 mb-5">Crée le joueur et ses personnages en une seule étape.</p>
-
             <div className="space-y-4">
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nom du joueur</label>
-                  <input
-                    autoFocus
-                    value={joueurName}
-                    onChange={(e) => setJoueurName(e.target.value)}
+                  <input autoFocus value={joueurName} onChange={(e) => setJoueurName(e.target.value)}
                     placeholder="ex : Alice, Bob…"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
-                  />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition" />
                 </div>
                 <div className="w-20">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Icône</label>
-                  <input
-                    value={joueurIcon}
-                    onChange={(e) => setJoueurIcon(e.target.value)}
-                    placeholder="🧙"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition text-center"
-                  />
+                  <input value={joueurIcon} onChange={(e) => setJoueurIcon(e.target.value)} placeholder="🧙"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition text-center" />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Personnages <span className="font-normal text-gray-400">(optionnel)</span>
@@ -254,51 +325,33 @@ export default function JoueursPage() {
                 <div className="space-y-2">
                   {personnageNames.map((name, i) => (
                     <div key={i} className="flex gap-2">
-                      <input
-                        value={name}
+                      <input value={name}
                         onChange={(e) => setPersonnageNames((prev) => prev.map((n, idx) => idx === i ? e.target.value : n))}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            setPersonnageNames((prev) => [...prev, ""]);
-                          }
-                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPersonnageNames((prev) => [...prev, ""]); } }}
                         placeholder={`Personnage ${i + 1}…`}
-                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
-                      />
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition" />
                       {personnageNames.length > 1 && (
-                        <button
-                          onClick={() => setPersonnageNames((prev) => prev.filter((_, idx) => idx !== i))}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
+                        <button onClick={() => setPersonnageNames((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                           <Trash2 size={14} />
                         </button>
                       )}
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={() => setPersonnageNames((prev) => [...prev, ""])}
-                  className="mt-2 flex items-center gap-1.5 text-sm text-green-600 hover:text-green-700 transition-colors"
-                >
-                  <Plus size={14} />
-                  Ajouter un personnage
+                <button onClick={() => setPersonnageNames((prev) => [...prev, ""])}
+                  className="mt-2 flex items-center gap-1.5 text-sm text-green-600 hover:text-green-700 transition-colors">
+                  <Plus size={14} />Ajouter un personnage
                 </button>
               </div>
             </div>
-
             <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => { setCreateModal(false); setJoueurName(""); setJoueurIcon(""); setPersonnageNames([""]); }}
-                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => { setCreateModal(false); setJoueurName(""); setJoueurIcon(""); setPersonnageNames([""]); }}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
                 Annuler
               </button>
-              <button
-                onClick={createJoueur}
-                disabled={creating || !joueurName.trim()}
-                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              >
+              <button onClick={createJoueur} disabled={creating || !joueurName.trim()}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
                 {creating ? "Création…" : "Créer"}
               </button>
             </div>
@@ -312,26 +365,17 @@ export default function JoueursPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 mx-4">
             <h2 className="text-base font-bold text-gray-900 mb-1">Nouveau personnage</h2>
             <p className="text-sm text-gray-500 mb-4">Pour {addPersoModal.joueurName}</p>
-            <input
-              autoFocus
-              value={newPersoName}
-              onChange={(e) => setNewPersoName(e.target.value)}
+            <input autoFocus value={newPersoName} onChange={(e) => setNewPersoName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addPersonnage()}
               placeholder="Nom du personnage…"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition mb-4"
-            />
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition mb-4" />
             <div className="flex gap-3">
-              <button
-                onClick={() => { setAddPersoModal({ open: false, joueurId: "", joueurName: "" }); setNewPersoName(""); }}
-                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-              >
+              <button onClick={() => { setAddPersoModal({ open: false, joueurId: "", joueurName: "" }); setNewPersoName(""); }}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
                 Annuler
               </button>
-              <button
-                onClick={addPersonnage}
-                disabled={addingPerso || !newPersoName.trim()}
-                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              >
+              <button onClick={addPersonnage} disabled={addingPerso || !newPersoName.trim()}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
                 {addingPerso ? "Création…" : "Créer"}
               </button>
             </div>

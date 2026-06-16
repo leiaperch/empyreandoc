@@ -49,6 +49,7 @@ model Page {
   slug        String       @unique
   published   Boolean      @default(true)
   archived    Boolean      @default(false)
+  tags        String       @default("")
   categoryId  String
   category    Category     @relation(fields: [categoryId], references: [id])
   authorId    String
