@@ -2,15 +2,15 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
-import { Plus, LogOut, FileText, Clock, Search } from "lucide-react";
+import { Plus, LogOut, FileText, Clock, Search, Layers } from "lucide-react";
 
 interface Page {
   id: string;
   title: string;
   updatedAt: string;
-  category: { name: string; icon: string | null };
+  category: { id: string; name: string; icon: string | null; parentId: string | null };
   author: { name: string };
   _count: { attachments: number };
 }
@@ -18,6 +18,34 @@ interface Page {
 interface NewPageModal {
   open: boolean;
   categoryId: string;
+}
+
+function PageCard({ page }: { page: Page }) {
+  return (
+    <a
+      href={`/doc/${page.id}`}
+      className="bg-white rounded-xl border border-gray-100 p-4 hover:border-green-300 hover:shadow-md hover:shadow-green-100 transition-all group"
+    >
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center text-lg shrink-0 group-hover:bg-green-100 transition-colors">
+          {page.category.icon ?? "📄"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-medium text-gray-900 truncate text-sm">{page.title}</h3>
+          <p className="text-xs text-gray-400 truncate mt-0.5">{page.category.name}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
+        <span className="flex items-center gap-1">
+          <Clock size={11} />
+          {new Date(page.updatedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+        </span>
+        {page._count.attachments > 0 && (
+          <span>📎 {page._count.attachments}</span>
+        )}
+      </div>
+    </a>
+  );
 }
 
 export default function Dashboard() {
@@ -29,6 +57,7 @@ export default function Dashboard() {
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string; icon: string | null }[]>([]);
+  const [groupByCategory, setGroupByCategory] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -81,9 +110,24 @@ export default function Dashboard() {
   };
 
   const role = (session?.user as { role?: string })?.role;
-  const filteredPages = pages.filter((p) =>
-    p.title.toLowerCase().includes(search.toLowerCase())
+
+  const filteredPages = useMemo(
+    () => pages.filter((p) => p.title.toLowerCase().includes(search.toLowerCase())),
+    [pages, search]
   );
+
+  const groupedPages = useMemo(() => {
+    if (!groupByCategory) return null;
+    const groups = new Map<string, { label: string; icon: string | null; pages: Page[] }>();
+    for (const p of filteredPages) {
+      const key = p.category.id;
+      if (!groups.has(key)) {
+        groups.set(key, { label: p.category.name, icon: p.category.icon, pages: [] });
+      }
+      groups.get(key)!.pages.push(p);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [filteredPages, groupByCategory]);
 
   if (status === "loading") {
     return (
@@ -98,7 +142,6 @@ export default function Dashboard() {
       <Sidebar onNewPage={(catId) => openNewPage(catId)} />
 
       <main className="flex-1 overflow-y-auto">
-        {/* Header */}
         <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-4">
           <div className="flex-1 relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -109,6 +152,20 @@ export default function Dashboard() {
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
             />
           </div>
+
+          <button
+            onClick={() => setGroupByCategory((v) => !v)}
+            title={groupByCategory ? "Vue liste" : "Grouper par rubrique"}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border ${
+              groupByCategory
+                ? "bg-green-600 text-white border-green-600"
+                : "text-gray-500 border-gray-200 hover:text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Layers size={15} />
+            <span className="hidden sm:inline">Grouper</span>
+          </button>
+
           {role === "SCENAR" && (
             <button
               onClick={() => openNewPage()}
@@ -128,7 +185,6 @@ export default function Dashboard() {
         </header>
 
         <div className="px-6 py-6">
-          {/* Welcome */}
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-gray-900">
               Bonjour, {session?.user?.name} 👋
@@ -138,7 +194,6 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* Page grid */}
           {filteredPages.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <FileText size={48} className="mx-auto mb-3 opacity-30" />
@@ -147,40 +202,29 @@ export default function Dashboard() {
                 <p className="text-sm mt-1">Créez votre première page avec le bouton ci-dessus.</p>
               )}
             </div>
+          ) : groupedPages ? (
+            <div className="space-y-8">
+              {groupedPages.map((group) => (
+                <div key={group.label}>
+                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                    <span>{group.icon ?? "📄"}</span>
+                    <span>{group.label}</span>
+                    <span className="font-normal normal-case tracking-normal text-gray-400">· {group.pages.length}</span>
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {group.pages.map((page) => <PageCard key={page.id} page={page} />)}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredPages.map((page) => (
-                <a
-                  key={page.id}
-                  href={`/doc/${page.id}`}
-                  className="bg-white rounded-xl border border-gray-100 p-4 hover:border-green-300 hover:shadow-md hover:shadow-green-100 transition-all group"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center text-lg shrink-0 group-hover:bg-green-100 transition-colors">
-                      {page.category.icon ?? "📄"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-medium text-gray-900 truncate text-sm">{page.title}</h3>
-                      <p className="text-xs text-gray-400 truncate mt-0.5">{page.category.name}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <Clock size={11} />
-                      {new Date(page.updatedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
-                    </span>
-                    {page._count.attachments > 0 && (
-                      <span>📎 {page._count.attachments}</span>
-                    )}
-                  </div>
-                </a>
-              ))}
+              {filteredPages.map((page) => <PageCard key={page.id} page={page} />)}
             </div>
           )}
         </div>
       </main>
 
-      {/* New page modal */}
       {modal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 mx-4">

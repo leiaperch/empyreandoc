@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus } from "lucide-react";
 
 interface Category {
   id: string;
@@ -28,12 +28,16 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, { id: string; title: string }[]>>({});
 
+  const [subCatModal, setSubCatModal] = useState<{ open: boolean; parentId: string; parentName: string }>({ open: false, parentId: "", parentName: "" });
+  const [subCatName, setSubCatName] = useState("");
+  const [subCatIcon, setSubCatIcon] = useState("");
+  const [subCreating, setSubCreating] = useState(false);
+
   const fetchCategories = useCallback(async () => {
     const res = await fetch("/api/categories");
     if (res.ok) {
       const data: Category[] = await res.json();
       setCategories(data);
-      // Auto-expand top-level
       const init: Record<string, boolean> = {};
       data.forEach((c) => { init[c.id] = true; });
       setExpanded((prev) => ({ ...init, ...prev }));
@@ -53,16 +57,40 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   useEffect(() => {
     categories.forEach((cat) => {
       fetchPagesForCategory(cat.id);
-      cat.children.forEach((child) => fetchPagesForCategory(child.id));
+      (cat.children ?? []).forEach((child) => fetchPagesForCategory(child.id));
     });
   }, [categories, fetchPagesForCategory]);
 
   const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
+  const createSubCategory = async () => {
+    if (!subCatName.trim()) return;
+    setSubCreating(true);
+    const slug = `${subCatName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const res = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: subCatName.trim(),
+        slug,
+        icon: subCatIcon.trim() || null,
+        parentId: subCatModal.parentId,
+      }),
+    });
+    setSubCreating(false);
+    if (res.ok) {
+      setSubCatModal({ open: false, parentId: "", parentName: "" });
+      setSubCatName("");
+      setSubCatIcon("");
+      fetchCategories();
+    }
+  };
+
   const renderCategory = (cat: Category, depth = 0) => {
     const isOpen = expanded[cat.id];
     const catPages = pages[cat.id] ?? [];
-    const hasChildren = (cat.children?.length ?? 0) > 0 || catPages.length > 0;
+    const children = cat.children ?? [];
+    const hasChildren = children.length > 0 || catPages.length > 0;
 
     return (
       <div key={cat.id}>
@@ -81,13 +109,27 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
           {cat.restricted && !cat.archived && <Lock size={11} className="text-green-500 shrink-0" />}
           {cat.archived && <span className="text-[10px] text-green-500 border border-green-600 rounded px-1">✓</span>}
           {role === "SCENAR" && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onNewPage?.(cat.id); }}
-              className="opacity-0 group-hover:opacity-100 ml-auto p-0.5 rounded hover:bg-green-600 transition-opacity"
-              title="Nouvelle page"
-            >
-              <Plus size={12} />
-            </button>
+            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-auto">
+              {depth === 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name });
+                  }}
+                  className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                  title="Nouvelle sous-rubrique"
+                >
+                  <FolderPlus size={12} />
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onNewPage?.(cat.id); }}
+                className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                title="Nouvelle page"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
           )}
         </div>
 
@@ -108,7 +150,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                 <span className="truncate">{p.title}</span>
               </Link>
             ))}
-            {(cat.children ?? []).map((child) => renderCategory(child, depth + 1))}
+            {children.map((child) => renderCategory(child, depth + 1))}
           </div>
         )}
       </div>
@@ -117,7 +159,6 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
 
   return (
     <aside className="w-64 shrink-0 bg-green-900 text-green-100 flex flex-col h-screen overflow-y-auto border-r border-green-800">
-      {/* Logo */}
       <div className="px-4 py-4 border-b border-green-800">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center text-white font-bold text-sm">E</div>
@@ -128,7 +169,6 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-2 py-2">
         <Link
           href="/dashboard"
@@ -143,13 +183,58 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         </div>
       </nav>
 
-      {/* Role badge */}
       <div className="px-4 py-3 border-t border-green-800">
         <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full
           ${role === "SCENAR" ? "bg-green-700 text-green-100" : "bg-green-800 text-green-300"}`}>
           {role === "SCENAR" ? "🎬 Scénariste" : "📜 Narrateur"}
         </span>
       </div>
+
+      {subCatModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 mx-4">
+            <h2 className="text-base font-bold text-gray-900 mb-1">Nouvelle sous-rubrique</h2>
+            <p className="text-sm text-gray-500 mb-4">Dans : {subCatModal.parentName}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom</label>
+                <input
+                  autoFocus
+                  value={subCatName}
+                  onChange={(e) => setSubCatName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && createSubCategory()}
+                  placeholder="ex : Joueur 1, Saison 2…"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Icône (emoji)</label>
+                <input
+                  value={subCatIcon}
+                  onChange={(e) => setSubCatIcon(e.target.value)}
+                  placeholder="ex : 🧙 🗡️ 🎲"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => { setSubCatModal({ open: false, parentId: "", parentName: "" }); setSubCatName(""); setSubCatIcon(""); }}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={createSubCategory}
+                disabled={subCreating || !subCatName.trim()}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {subCreating ? "Création…" : "Créer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
