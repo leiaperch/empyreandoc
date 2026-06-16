@@ -250,7 +250,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                       <Pencil size={11} />
                     </button>
                   )}
-                  {depth === 0 && (
+                  {depth <= 1 && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name }); }}
                       className="p-0.5 rounded hover:bg-green-600 transition-colors"

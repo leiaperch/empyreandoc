@@ -43,9 +43,21 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const category = await prisma.category.findUnique({ where: { id } });
+  const category = await prisma.category.findUnique({
+    where: { id },
+    include: { children: { include: { children: true } } },
+  });
   if (!category) return NextResponse.json({ error: "Rubrique introuvable." }, { status: 404 });
 
+  // Delete pages and sub-categories recursively (depth 2)
+  for (const child of category.children ?? []) {
+    for (const grandchild of child.children ?? []) {
+      await prisma.page.deleteMany({ where: { categoryId: grandchild.id } });
+      await prisma.category.delete({ where: { id: grandchild.id } });
+    }
+    await prisma.page.deleteMany({ where: { categoryId: child.id } });
+    await prisma.category.delete({ where: { id: child.id } });
+  }
   await prisma.page.deleteMany({ where: { categoryId: id } });
   await prisma.category.delete({ where: { id } });
 

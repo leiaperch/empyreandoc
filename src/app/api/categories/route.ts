@@ -15,19 +15,29 @@ export async function GET() {
     include: {
       children: {
         orderBy: { order: "asc" },
+        include: {
+          children: {
+            orderBy: { order: "asc" },
+          },
+        },
       },
     },
   });
 
-  // Narras cannot see restricted categories unless archived (accomplished)
+  const canSee = (c: { restricted: boolean; archived: boolean }) =>
+    role === "SCENAR" || role === "ADMIN" || !c.restricted || c.archived;
+
   const filtered = categories
     .map((cat) => ({
       ...cat,
-      children: cat.children.filter(
-        (c) => role === "SCENAR" || role === "ADMIN" || !c.restricted || c.archived
-      ),
+      children: cat.children
+        .filter(canSee)
+        .map((child) => ({
+          ...child,
+          children: (child.children ?? []).filter(canSee),
+        })),
     }))
-    .filter((cat) => role === "SCENAR" || role === "ADMIN" || !cat.restricted || cat.archived);
+    .filter(canSee);
 
   return NextResponse.json(filtered);
 }
