@@ -24,10 +24,10 @@ export async function GET() {
     .map((cat) => ({
       ...cat,
       children: cat.children.filter(
-        (c) => role === "SCENAR" || !c.restricted || c.archived
+        (c) => role === "SCENAR" || role === "ADMIN" || !c.restricted || c.archived
       ),
     }))
-    .filter((cat) => role === "SCENAR" || !cat.restricted || cat.archived);
+    .filter((cat) => role === "SCENAR" || role === "ADMIN" || !cat.restricted || cat.archived);
 
   return NextResponse.json(filtered);
 }
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
 
   const { role } = session.user;
-  if (role !== "SCENAR") {
-    return NextResponse.json({ error: "Seuls les scénaristes peuvent créer des rubriques." }, { status: 403 });
+  if (role !== "SCENAR" && role !== "ADMIN") {
+    return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
   }
 
   const { name, slug, icon, restricted, parentId, order } = await req.json();

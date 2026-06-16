@@ -7,8 +7,7 @@ function canAccessCategory(
   category: { restricted: boolean; archived: boolean },
   role: string
 ): boolean {
-  if (role === "SCENAR") return true;
-  // Narras can access restricted categories only if archived (accomplished)
+  if (role === "SCENAR" || role === "ADMIN") return true;
   return !category.restricted || category.archived;
 }
 

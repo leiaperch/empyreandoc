@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X } from "lucide-react";
 
 interface Category {
   id: string;
@@ -28,10 +28,22 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, { id: string; title: string }[]>>({});
 
+  // Sub-category creation modal
   const [subCatModal, setSubCatModal] = useState<{ open: boolean; parentId: string; parentName: string }>({ open: false, parentId: "", parentName: "" });
   const [subCatName, setSubCatName] = useState("");
   const [subCatIcon, setSubCatIcon] = useState("");
   const [subCreating, setSubCreating] = useState(false);
+
+  // Rename state for categories
+  const [renameCatId, setRenameCatId] = useState<string | null>(null);
+  const [renameCatName, setRenameCatName] = useState("");
+  const [renameCatIcon, setRenameCatIcon] = useState("");
+
+  // Rename state for pages
+  const [renamePageId, setRenamePageId] = useState<string | null>(null);
+  const [renamePageTitle, setRenamePageTitle] = useState("");
+
+  const canManage = role === "SCENAR" || role === "ADMIN";
 
   const fetchCategories = useCallback(async () => {
     const res = await fetch("/api/categories");
@@ -86,12 +98,68 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
     }
   };
 
+  const startRenameCat = (cat: Category, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenameCatId(cat.id);
+    setRenameCatName(cat.name);
+    setRenameCatIcon(cat.icon ?? "");
+    setRenamePageId(null);
+  };
+
+  const saveRenameCat = async (e?: React.MouseEvent | React.KeyboardEvent) => {
+    e?.stopPropagation();
+    if (!renameCatId) return;
+    await fetch(`/api/categories/${renameCatId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: renameCatName.trim(), icon: renameCatIcon.trim() || null }),
+    });
+    setRenameCatId(null);
+    fetchCategories();
+  };
+
+  const startRenamePage = (page: { id: string; title: string }, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRenamePageId(page.id);
+    setRenamePageTitle(page.title);
+    setRenameCatId(null);
+  };
+
+  const saveRenamePage = async (e?: React.MouseEvent | React.KeyboardEvent) => {
+    e?.stopPropagation();
+    if (!renamePageId || !renamePageTitle.trim()) return;
+    await fetch(`/api/pages/${renamePageId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: renamePageTitle.trim() }),
+    });
+    setRenamePageId(null);
+    // Update local state immediately
+    setPages((prev) => {
+      const updated = { ...prev };
+      for (const catId in updated) {
+        updated[catId] = updated[catId].map((p) =>
+          p.id === renamePageId ? { ...p, title: renamePageTitle.trim() } : p
+        );
+      }
+      return updated;
+    });
+  };
+
+  const cancelRename = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setRenameCatId(null);
+    setRenamePageId(null);
+  };
+
   const renderCategory = (cat: Category, depth = 0): React.ReactNode => {
     if (depth === 0 && cat.slug === "personnages") return null;
     const isOpen = expanded[cat.id];
     const catPages = pages[cat.id] ?? [];
     const children = cat.children ?? [];
     const hasChildren = children.length > 0 || catPages.length > 0;
+    const isRenamingThisCat = renameCatId === cat.id;
 
     return (
       <div key={cat.id}>
@@ -100,63 +168,128 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
             ${depth === 0 ? "text-green-100 font-semibold text-xs uppercase tracking-wide mt-3" : "text-green-200 text-sm hover:bg-green-700/40"}
           `}
           style={{ paddingLeft: `${12 + depth * 12}px` }}
-          onClick={() => toggle(cat.id)}
+          onClick={() => !isRenamingThisCat && toggle(cat.id)}
         >
           {hasChildren ? (
             isOpen ? <ChevronDown size={13} className="shrink-0 text-green-400" /> : <ChevronRight size={13} className="shrink-0 text-green-400" />
           ) : <span className="w-3" />}
-          <span className="mr-1">{cat.icon ?? "📄"}</span>
-          <span className="truncate flex-1">{cat.name}</span>
-          {cat.restricted && !cat.archived && <Lock size={11} className="text-green-500 shrink-0" />}
-          {cat.archived && <span className="text-[10px] text-green-500 border border-green-600 rounded px-1">✓</span>}
-          {role === "SCENAR" && (
-            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-auto">
-              {depth === 0 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name });
-                  }}
-                  className="p-0.5 rounded hover:bg-green-600 transition-colors"
-                  title="Nouvelle sous-rubrique"
-                >
-                  <FolderPlus size={12} />
-                </button>
-              )}
-              <button
-                onClick={(e) => { e.stopPropagation(); onNewPage?.(cat.id); }}
-                className="p-0.5 rounded hover:bg-green-600 transition-colors"
-                title="Nouvelle page"
-              >
-                <Plus size={12} />
-              </button>
+
+          {isRenamingThisCat ? (
+            <div className="flex items-center gap-1 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+              <input
+                autoFocus
+                value={renameCatIcon}
+                onChange={(e) => setRenameCatIcon(e.target.value)}
+                className="w-8 text-center bg-green-800 text-green-100 border border-green-600 rounded px-1 py-0.5 text-xs outline-none"
+                placeholder="📄"
+              />
+              <input
+                value={renameCatName}
+                onChange={(e) => setRenameCatName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveRenameCat(e); if (e.key === "Escape") cancelRename(); }}
+                className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+              />
+              <button onClick={saveRenameCat} className="p-0.5 text-green-300 hover:text-green-100"><Check size={11} /></button>
+              <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200"><X size={11} /></button>
             </div>
+          ) : (
+            <>
+              <span className="mr-1">{cat.icon ?? "📄"}</span>
+              <span className="truncate flex-1">{cat.name}</span>
+              {cat.restricted && !cat.archived && <Lock size={11} className="text-green-500 shrink-0" />}
+              {cat.archived && <span className="text-[10px] text-green-500 border border-green-600 rounded px-1">✓</span>}
+              {canManage && (
+                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-auto shrink-0">
+                  {depth >= 1 && (
+                    <button
+                      onClick={(e) => startRenameCat(cat, e)}
+                      className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                      title="Renommer"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                  {depth === 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSubCatModal({ open: true, parentId: cat.id, parentName: cat.name });
+                      }}
+                      className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                      title="Nouvelle sous-rubrique"
+                    >
+                      <FolderPlus size={12} />
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onNewPage?.(cat.id); }}
+                    className="p-0.5 rounded hover:bg-green-600 transition-colors"
+                    title="Nouvelle page"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {isOpen && (
           <div>
-            {catPages.map((p) => (
-              <Link
-                key={p.id}
-                href={`/doc/${p.id}`}
-                className={`flex items-center gap-2 py-1 rounded-md text-sm transition-colors
-                  ${activePage === p.id
-                    ? "bg-green-600 text-white"
-                    : "text-green-300 hover:bg-green-700/40 hover:text-green-100"
-                  }`}
-                style={{ paddingLeft: `${24 + depth * 12}px` }}
-              >
-                <FileText size={12} className="shrink-0" />
-                <span className="truncate">{p.title}</span>
-              </Link>
-            ))}
+            {catPages.map((p) => {
+              const isRenamingThisPage = renamePageId === p.id;
+              if (isRenamingThisPage) {
+                return (
+                  <div key={p.id} className="flex items-center gap-1 py-1 rounded-md" style={{ paddingLeft: `${24 + depth * 12}px`, paddingRight: "8px" }}>
+                    <input
+                      autoFocus
+                      value={renamePageTitle}
+                      onChange={(e) => setRenamePageTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveRenamePage(e); if (e.key === "Escape") cancelRename(); }}
+                      className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+                    />
+                    <button onClick={saveRenamePage} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
+                    <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
+                  </div>
+                );
+              }
+              return (
+                <div key={p.id} className="group flex items-center rounded-md transition-colors" style={{ paddingLeft: `${24 + depth * 12}px` }}>
+                  <Link
+                    href={`/doc/${p.id}`}
+                    className={`flex items-center gap-2 py-1 flex-1 min-w-0 text-sm transition-colors
+                      ${activePage === p.id
+                        ? "text-white"
+                        : "text-green-300 hover:text-green-100"
+                      }`}
+                  >
+                    <FileText size={12} className="shrink-0" />
+                    <span className="truncate">{p.title}</span>
+                  </Link>
+                  {canManage && (
+                    <button
+                      onClick={(e) => startRenamePage(p, e)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 mr-1 rounded hover:bg-green-600 text-green-400 hover:text-green-100 transition-all shrink-0"
+                      title="Renommer"
+                    >
+                      <Pencil size={10} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             {children.map((child) => renderCategory(child, depth + 1))}
           </div>
         )}
       </div>
     );
   };
+
+  const roleBadge = role === "ADMIN"
+    ? { label: "👑 Admin", cls: "bg-amber-700 text-amber-100" }
+    : role === "SCENAR"
+    ? { label: "🎬 Scénariste", cls: "bg-green-700 text-green-100" }
+    : { label: "📜 Narrateur", cls: "bg-green-800 text-green-300" };
 
   return (
     <aside className="w-64 shrink-0 bg-green-900 text-green-100 flex flex-col h-screen overflow-y-auto border-r border-green-800">
@@ -192,9 +325,8 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
       </nav>
 
       <div className="px-4 py-3 border-t border-green-800">
-        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full
-          ${role === "SCENAR" ? "bg-green-700 text-green-100" : "bg-green-800 text-green-300"}`}>
-          {role === "SCENAR" ? "🎬 Scénariste" : "📜 Narrateur"}
+        <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${roleBadge.cls}`}>
+          {roleBadge.label}
         </span>
       </div>
 

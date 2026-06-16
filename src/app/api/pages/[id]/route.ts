@@ -7,7 +7,7 @@ function canAccessCategory(
   category: { restricted: boolean; archived: boolean },
   role: string
 ): boolean {
-  if (role === "SCENAR") return true;
+  if (role === "SCENAR" || role === "ADMIN") return true;
   return !category.restricted || category.archived;
 }
 
