@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
 import EmojiPicker from "@/components/EmojiPicker";
 import Link from "next/link";
-import { Plus, UserPlus, FileText, ChevronRight, Trash2, Tag, X } from "lucide-react";
+import { Plus, UserPlus, FileText, ChevronRight, Trash2, Tag, X, Pencil } from "lucide-react";
 
 interface Personnage {
   id: string;
@@ -134,6 +134,8 @@ export default function JoueursPage() {
   const [personnageNames, setPersonnageNames] = useState<string[]>([""]);
   const [creating, setCreating] = useState(false);
   const [deletingJoueurId, setDeletingJoueurId] = useState<string | null>(null);
+  const [editModal, setEditModal] = useState<{ open: boolean; joueurId: string; name: string; icon: string } | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   const [addPersoModal, setAddPersoModal] = useState<{ open: boolean; joueurId: string; joueurName: string }>({ open: false, joueurId: "", joueurName: "" });
   const [newPersoName, setNewPersoName] = useState("");
@@ -221,6 +223,19 @@ export default function JoueursPage() {
     setCreateModal(false);
     setJoueurName(""); setJoueurIcon(""); setPersonnageNames([""]);
     fetchJoueurs(); fetchTags();
+  };
+
+  const saveEditJoueur = async () => {
+    if (!editModal || !editModal.name.trim()) return;
+    setEditSaving(true);
+    await fetch(`/api/categories/${editModal.joueurId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editModal.name.trim(), icon: editModal.icon || null }),
+    });
+    setEditSaving(false);
+    setEditModal(null);
+    fetchJoueurs();
   };
 
   const deleteJoueur = async (joueurId: string) => {
@@ -331,6 +346,10 @@ export default function JoueursPage() {
                           className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Nouveau personnage">
                           <Plus size={15} />
                         </button>
+                        <button onClick={(e) => { e.stopPropagation(); setEditModal({ open: true, joueurId: joueur.id, name: joueur.name, icon: joueur.icon ?? "" }); }}
+                          className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Modifier le joueur">
+                          <Pencil size={14} />
+                        </button>
                         <button onClick={(e) => { e.stopPropagation(); deleteJoueur(joueur.id); }}
                           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Supprimer le joueur">
                           <Trash2 size={14} />
@@ -438,6 +457,51 @@ export default function JoueursPage() {
               <button onClick={createJoueur} disabled={creating || !joueurName.trim()}
                 className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
                 {creating ? "Création…" : "Créer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editModal?.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 mx-4">
+            <h2 className="text-base font-bold text-gray-900 mb-1">Modifier le joueur</h2>
+            <p className="text-sm text-gray-500 mb-5">Nom et icône affichés sur la carte et dans la sidebar.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom du joueur</label>
+                <input
+                  autoFocus
+                  value={editModal.name}
+                  onChange={(e) => setEditModal((m) => m ? { ...m, name: e.target.value } : m)}
+                  onKeyDown={(e) => e.key === "Enter" && saveEditJoueur()}
+                  placeholder="Nom du joueur…"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Icône</label>
+                <EmojiPicker
+                  value={editModal.icon}
+                  onChange={(emoji) => setEditModal((m) => m ? { ...m, icon: emoji } : m)}
+                  placeholder="🧙"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditModal(null)}
+                className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={saveEditJoueur}
+                disabled={editSaving || !editModal.name.trim()}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {editSaving ? "Enregistrement…" : "Sauvegarder"}
               </button>
             </div>
           </div>
