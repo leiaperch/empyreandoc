@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 
 export const dynamic = "force-dynamic";
+
+const MAX_SIZE = 4 * 1024 * 1024; // 4 MB
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -19,35 +19,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Fichier et pageId requis." }, { status: 400 });
   }
 
-  // Validate file size (max 10 MB)
-  if (file.size > 10 * 1024 * 1024) {
-    return NextResponse.json({ error: "Fichier trop volumineux (max 10 Mo)." }, { status: 413 });
+  if (file.size > MAX_SIZE) {
+    return NextResponse.json({ error: "Fichier trop volumineux (max 4 Mo)." }, { status: 413 });
   }
 
   const page = await prisma.page.findUnique({ where: { id: pageId } });
   if (!page) return NextResponse.json({ error: "Page introuvable." }, { status: 404 });
 
-  const uploadDir = path.join(process.cwd(), "public", "uploads", pageId);
-  await mkdir(uploadDir, { recursive: true });
-
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const fileName = `${Date.now()}-${safeName}`;
-  const filePath = path.join(uploadDir, fileName);
   const bytes = await file.arrayBuffer();
-  await writeFile(filePath, Buffer.from(bytes));
+  const base64 = Buffer.from(bytes).toString("base64");
+  const dataUrl = `data:${file.type};base64,${base64}`;
 
-  const url = `/uploads/${pageId}/${fileName}`;
   const attachment = await prisma.attachment.create({
     data: {
       name: file.name,
-      url,
+      url: dataUrl,
       mimeType: file.type,
       size: file.size,
       pageId,
     },
   });
 
-  return NextResponse.json(attachment, { status: 201 });
+  // Don't return the full data URL in the list response to save bandwidth;
+  // return a lightweight object and keep the full URL only when needed.
+  return NextResponse.json({
+    id: attachment.id,
+    name: attachment.name,
+    url: attachment.url,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    pageId: attachment.pageId,
+  }, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {

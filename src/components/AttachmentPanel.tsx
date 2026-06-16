@@ -106,7 +106,7 @@ export default function AttachmentPanel({ pageId, attachments, onAttachmentsChan
           <p className="text-sm text-gray-400">
             Glissez vos fichiers ici ou <span className="text-green-600 underline">parcourez</span>
             <br />
-            <span className="text-xs">Images, PDF, documents — max 10 Mo</span>
+            <span className="text-xs">Images, PDF, documents — max 4 Mo</span>
           </p>
         )}
       </div>
@@ -124,14 +124,18 @@ export default function AttachmentPanel({ pageId, attachments, onAttachmentsChan
               <AttachmentIcon mimeType={att.mimeType} />
               <span className="text-sm text-gray-700 truncate flex-1">{att.name}</span>
               <span className="text-xs text-gray-400 shrink-0">{formatSize(att.size)}</span>
-              <a
-                href={att.url}
-                download={att.name}
+              <button
+                onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = att.url;
+                  a.download = att.name;
+                  a.click();
+                }}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-green-100 transition-opacity"
                 title="Télécharger"
               >
                 <Download size={13} className="text-green-600" />
-              </a>
+              </button>
               <button
                 onClick={() => handleDelete(att.id)}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 transition-opacity"
