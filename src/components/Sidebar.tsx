@@ -62,7 +62,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const renderCategory = (cat: Category, depth = 0) => {
     const isOpen = expanded[cat.id];
     const catPages = pages[cat.id] ?? [];
-    const hasChildren = cat.children.length > 0 || catPages.length > 0;
+    const hasChildren = (cat.children?.length ?? 0) > 0 || catPages.length > 0;
 
     return (
       <div key={cat.id}>
@@ -108,7 +108,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                 <span className="truncate">{p.title}</span>
               </Link>
             ))}
-            {cat.children.map((child) => renderCategory(child, depth + 1))}
+            {(cat.children ?? []).map((child) => renderCategory(child, depth + 1))}
           </div>
         )}
       </div>
