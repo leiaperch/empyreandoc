@@ -200,10 +200,8 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   };
 
   const renderCategory = (cat: Category, depth = 0): React.ReactNode => {
-    // "personnages" at depth 0 → render as "Joueurs" section with joueurs as children
-    if (depth === 0 && cat.slug === "personnages") {
-      return renderPersonnagesSection(cat);
-    }
+    if (depth === 0 && cat.slug === "personnages") return renderPersonnagesSection(cat);
+    if (depth === 0 && cat.slug === "plots-personnage") return null;
 
     const isOpen = expanded[cat.id];
     const children = cat.children ?? [];

@@ -122,7 +122,6 @@ export default function JoueursPage() {
   const router = useRouter();
   const [joueurs, setJoueurs] = useState<Joueur[]>([]);
   const [personnagesCatId, setPersonnagesCatId] = useState<string | null>(null);
-  const [plotsPersoId, setPlotsPersoId] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -160,11 +159,9 @@ export default function JoueursPage() {
 
     const cats = await catRes.json();
     const personnagesCat = cats.find((c: { slug: string }) => c.slug === "personnages");
-    const plotsCat = cats.find((c: { slug: string }) => c.slug === "plots-personnage");
 
     if (!personnagesCat) { setLoading(false); return; }
     setPersonnagesCatId(personnagesCat.id);
-    if (plotsCat) setPlotsPersoId(plotsCat.id);
 
     const joueursData: Joueur[] = [];
     for (const joueur of personnagesCat.children ?? []) {
@@ -217,7 +214,6 @@ export default function JoueursPage() {
     const newCat = await catRes.json();
     for (const name of personnageNames.filter((n) => n.trim())) {
       await createPersonnagePage(name, newCat.id);
-      if (plotsPersoId) await createPersonnagePage(name, plotsPersoId);
     }
     setCreating(false);
     setCreateModal(false);
@@ -250,7 +246,6 @@ export default function JoueursPage() {
     if (!newPersoName.trim() || !addPersoModal.joueurId) return;
     setAddingPerso(true);
     const page = await createPersonnagePage(newPersoName, addPersoModal.joueurId);
-    if (plotsPersoId) await createPersonnagePage(newPersoName, plotsPersoId);
     setAddingPerso(false);
     if (page) {
       setAddPersoModal({ open: false, joueurId: "", joueurName: "" });
