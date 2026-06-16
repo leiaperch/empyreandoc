@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -32,8 +32,8 @@ interface PageData {
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-export default function DocPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function DocPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const { data: session, status } = useSession();
   const router = useRouter();
   const [page, setPage] = useState<PageData | null>(null);
