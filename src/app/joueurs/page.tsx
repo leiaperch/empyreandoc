@@ -149,7 +149,10 @@ export default function JoueursPage() {
 
   const fetchTags = useCallback(async () => {
     const res = await fetch("/api/tags");
-    if (res.ok) setAllTags(await res.json());
+    if (res.ok) {
+      const data = await res.json();
+      setAllTags(Array.isArray(data) ? data.map((t: { name: string } | string) => typeof t === "string" ? t : t.name) : []);
+    }
   }, []);
 
   const fetchJoueurs = useCallback(async () => {
@@ -176,6 +179,7 @@ export default function JoueursPage() {
         })),
       });
     }
+    joueursData.sort((a, b) => a.name.localeCompare(b.name, "fr"));
     setJoueurs(joueursData);
     setLoading(false);
   }, []);

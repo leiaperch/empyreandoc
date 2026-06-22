@@ -61,6 +61,13 @@ model Page {
   attachments Attachment[]
 }
 
+model Tag {
+  id    String  @id @default(cuid())
+  name  String  @unique
+  color String  @default("#10b981")
+  icon  String?
+}
+
 model Attachment {
   id        String   @id @default(cuid())
   name      String

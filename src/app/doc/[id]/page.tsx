@@ -68,7 +68,6 @@ export default function DocPage({ params }: { params: { id: string } }) {
   const tagInputRef = useRef<HTMLInputElement>(null);
 
   const role = (session?.user as { role?: string })?.role;
-  const isAdmin = role === "ADMIN";
   const canEdit = role === "SCENAR" || role === "ADMIN";
 
   useEffect(() => {
@@ -96,7 +95,9 @@ export default function DocPage({ params }: { params: { id: string } }) {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    fetch("/api/tags").then((r) => r.ok ? r.json() : []).then(setAllTags);
+    fetch("/api/tags").then((r) => r.ok ? r.json() : []).then((data) =>
+      setAllTags(Array.isArray(data) ? data.map((t: { name: string } | string) => typeof t === "string" ? t : t.name) : [])
+    );
   }, [status]);
 
   const save = useCallback(async (t: string, c: string, tgs?: string[]) => {
@@ -251,7 +252,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
                     <Archive size={16} />
                   </button>
                 )}
-                {isAdmin && (
+                {canEdit && (
                   <button onClick={handleDelete} title="Supprimer"
                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                     <Trash2 size={16} />

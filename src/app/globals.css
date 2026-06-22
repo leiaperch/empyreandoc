@@ -56,3 +56,30 @@ body {
   margin: 1em 0;
 }
 
+/* Image alignment / float */
+.ProseMirror img[data-align="left"] {
+  float: left;
+  margin: 0.25rem 1.25rem 0.5rem 0;
+  max-width: 45%;
+  clear: left;
+}
+.ProseMirror img[data-align="right"] {
+  float: right;
+  margin: 0.25rem 0 0.5rem 1.25rem;
+  max-width: 45%;
+  clear: right;
+}
+.ProseMirror img[data-align="center"] {
+  display: block;
+  margin: 1rem auto;
+  float: none;
+}
+/* clearfix after floated images */
+.ProseMirror p:has(+ p) { overflow: hidden; }
+
+/* Image selected highlight */
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 3px solid #16a34a;
+  border-radius: 6px;
+}
+

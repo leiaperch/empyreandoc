@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
 
 interface Category {
@@ -473,6 +473,15 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
           <Users size={15} />
           Joueurs
         </Link>
+        {(role === "SCENAR" || role === "ADMIN") && (
+          <Link
+            href="/tags"
+            className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-green-200 hover:bg-green-700/40 hover:text-green-100 transition-colors"
+          >
+            <Tag size={15} />
+            Tags
+          </Link>
+        )}
 
         <div className="mt-2">
           {categories.map((cat) => renderCategory(cat))}

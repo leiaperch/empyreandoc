@@ -84,8 +84,8 @@ export async function DELETE(
   const { role } = session.user;
   const { id } = await params;
 
-  if (role !== "ADMIN") {
-    return NextResponse.json({ error: "Seuls les administrateurs peuvent supprimer des pages." }, { status: 403 });
+  if (role !== "ADMIN" && role !== "SCENAR") {
+    return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
   }
 
   const page = await prisma.page.findUnique({ where: { id } });
