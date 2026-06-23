@@ -62,7 +62,52 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const [renamePageId, setRenamePageId] = useState<string | null>(null);
   const [renamePageTitle, setRenamePageTitle] = useState("");
 
+  // Drag & drop reordering
+  const [dragPage, setDragPage] = useState<{ id: string; catId: string } | null>(null);
+  const [dragOverPageId, setDragOverPageId] = useState<string | null>(null);
+  const [dragCat, setDragCat] = useState<string | null>(null);
+  const [dragOverCatId, setDragOverCatId] = useState<string | null>(null);
+
   const canManage = role === "SCENAR" || role === "ADMIN";
+
+  // Reorders an array of {id} by moving fromId to toId's position; returns new id list or null.
+  const reorderIds = (list: { id: string }[], fromId: string, toId: string): string[] | null => {
+    const ids = list.map((x) => x.id);
+    const from = ids.indexOf(fromId);
+    const to = ids.indexOf(toId);
+    if (from < 0 || to < 0 || from === to) return null;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    return ids;
+  };
+
+  const handlePageDrop = (catId: string, targetId: string) => {
+    if (!dragPage || dragPage.catId !== catId || dragPage.id === targetId) {
+      setDragPage(null); setDragOverPageId(null); return;
+    }
+    const current = pages[catId] ?? [];
+    const ids = reorderIds(current, dragPage.id, targetId);
+    setDragPage(null); setDragOverPageId(null);
+    if (!ids) return;
+    const byId = new Map(current.map((p) => [p.id, p]));
+    setPages((prev) => ({ ...prev, [catId]: ids.map((id) => byId.get(id)!) }));
+    fetch("/api/pages/reorder", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+  };
+
+  const handleCatDrop = (siblings: Category[], targetId: string) => {
+    if (!dragCat || dragCat === targetId || !siblings.some((s) => s.id === dragCat)) {
+      setDragCat(null); setDragOverCatId(null); return;
+    }
+    const ids = reorderIds(siblings, dragCat, targetId);
+    setDragCat(null); setDragOverCatId(null);
+    if (!ids) return;
+    fetch("/api/categories/reorder", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).then(() => fetchCategories());
+  };
 
   const fetchCategories = useCallback(async () => {
     const res = await fetch("/api/categories");
@@ -76,7 +121,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   }, []);
 
   const fetchPagesForCategory = useCallback(async (categoryId: string) => {
-    const res = await fetch(`/api/pages?categoryId=${categoryId}`);
+    const res = await fetch(`/api/pages?categoryId=${categoryId}&sort=order`);
     if (res.ok) {
       const data = await res.json();
       setPages((prev) => ({ ...prev, [categoryId]: data.map((p: { id: string; title: string }) => ({ id: p.id, title: p.title })) }));
@@ -252,7 +297,19 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         );
       }
       return (
-        <div key={p.id} className="group flex items-center rounded-md transition-colors" style={{ paddingLeft: `${24 + depth * 12}px` }}>
+        <div
+          key={p.id}
+          draggable={canManage}
+          onDragStart={(e) => { if (!canManage) return; e.stopPropagation(); setDragPage({ id: p.id, catId }); }}
+          onDragOver={(e) => { if (dragPage && dragPage.catId === catId) { e.preventDefault(); setDragOverPageId(p.id); } }}
+          onDragLeave={() => setDragOverPageId((cur) => (cur === p.id ? null : cur))}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handlePageDrop(catId, p.id); }}
+          onDragEnd={() => { setDragPage(null); setDragOverPageId(null); }}
+          className={`group flex items-center rounded-md transition-colors ${
+            dragOverPageId === p.id && dragPage?.catId === catId ? "border-t-2 border-green-400" : ""
+          } ${dragPage?.id === p.id ? "opacity-40" : ""}`}
+          style={{ paddingLeft: `${24 + depth * 12}px` }}
+        >
           <Link
             href={`/doc/${p.id}`}
             className={`flex items-center gap-2 py-1 flex-1 min-w-0 text-sm transition-colors
@@ -275,7 +332,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
     });
   };
 
-  const renderCategory = (cat: Category, depth = 0): React.ReactNode => {
+  const renderCategory = (cat: Category, depth = 0, siblings: Category[] = categories): React.ReactNode => {
     if (depth === 0 && cat.slug === "personnages") return renderPersonnagesSection(cat);
     if (depth === 0 && cat.slug === "plots-personnage") return null;
 
@@ -288,11 +345,19 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
     return (
       <div key={cat.id}>
         <div
+          draggable={canManage && !isRenamingThisCat}
+          onDragStart={(e) => { if (!canManage || isRenamingThisCat) return; e.stopPropagation(); setDragCat(cat.id); }}
+          onDragOver={(e) => { if (dragCat && siblings.some((s) => s.id === dragCat) && dragCat !== cat.id) { e.preventDefault(); setDragOverCatId(cat.id); } }}
+          onDragLeave={() => setDragOverCatId((cur) => (cur === cat.id ? null : cur))}
+          onDrop={(e) => { if (!dragCat) return; e.preventDefault(); e.stopPropagation(); handleCatDrop(siblings, cat.id); }}
+          onDragEnd={() => { setDragCat(null); setDragOverCatId(null); }}
           className={`flex items-center gap-1 px-3 py-1.5 rounded-md cursor-pointer group transition-colors
             ${depth === 0
               ? "text-green-100 font-semibold text-xs uppercase tracking-wide mt-3"
               : "text-green-200 text-sm hover:bg-green-700/40"
-            }`}
+            }
+            ${dragOverCatId === cat.id && dragCat && dragCat !== cat.id ? "border-t-2 border-green-400" : ""}
+            ${dragCat === cat.id ? "opacity-40" : ""}`}
           style={{ paddingLeft: `${12 + depth * 12}px` }}
           onClick={() => !isRenamingThisCat && toggle(cat.id)}
           onDoubleClick={(e) => { e.preventDefault(); if (canManage && depth >= 1) startInlineNewPage(cat.id); }}
@@ -353,7 +418,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
           <div>
             {renderNewPageInput(cat.id, depth)}
             {renderPages(cat.id, depth)}
-            {children.map((child) => renderCategory(child, depth + 1))}
+            {children.map((child) => renderCategory(child, depth + 1, children))}
           </div>
         )}
       </div>

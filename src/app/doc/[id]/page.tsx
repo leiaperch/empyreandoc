@@ -11,6 +11,7 @@ import Link from "next/link";
 import VersionsModal from "@/components/VersionsModal";
 import CommentsSection from "@/components/CommentsSection";
 import TableOfContents from "@/components/TableOfContents";
+import RelationsPanel from "@/components/RelationsPanel";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
 
@@ -380,6 +381,10 @@ export default function DocPage({ params }: { params: { id: string } }) {
             attachments={attachments}
             onAttachmentsChange={setAttachments}
           />
+
+          <div className="print:hidden">
+            <RelationsPanel pageId={id} canManage={canEdit} />
+          </div>
 
           <div className="mt-8 pt-6 border-t border-gray-100 text-xs text-gray-400 flex items-center gap-4">
             <span>Auteur : {page.author.name}</span>

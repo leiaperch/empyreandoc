@@ -18,10 +18,11 @@ export async function GET(req: NextRequest) {
   const { role } = session.user;
   const { searchParams } = new URL(req.url);
   const categoryId = searchParams.get("categoryId");
+  const sort = searchParams.get("sort");
 
   const pages = await prisma.page.findMany({
     where: categoryId ? { categoryId } : undefined,
-    orderBy: { updatedAt: "desc" },
+    orderBy: sort === "order" ? [{ order: "asc" }, { title: "asc" }] : { updatedAt: "desc" },
     include: {
       category: true,
       author: { select: { id: true, name: true, role: true } },

@@ -56,6 +56,7 @@ model Page {
   archived    Boolean      @default(false)
   tags           String       @default("")
   linkedPageIds  String       @default("")
+  order          Int          @default(0)
   categoryId     String
   category    Category     @relation(fields: [categoryId], references: [id])
   authorId    String
