@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Sidebar from "@/components/Sidebar";
 import EmojiPicker from "@/components/EmojiPicker";
-import { Share2, Plus, X, Trash2, Check, ArrowLeft, Tag } from "lucide-react";
+import { Share2, Plus, X, Trash2, Check, ArrowLeft, Tag, CircleDot, Circle as CircleOutline } from "lucide-react";
 
 interface GraphNode {
   id: string;
@@ -56,6 +56,7 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [showGroups, setShowGroups] = useState(true);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [searchA, setSearchA] = useState("");
@@ -131,6 +132,22 @@ export default function GraphPage() {
     return edges.filter((e) => e.source === focusedNode.id || e.target === focusedNode.id);
   }, [edges, focusedNode]);
 
+  // Cluster nodes of the same group next to each other on the circle, so circles stay small and don't sprawl across the whole graph.
+  const clusteredNodes = useMemo(() => {
+    if (!showGroups || groups.length === 0) return displayNodes;
+    const primaryGroup = new Map<string, number>();
+    groups.forEach((g, gi) => {
+      for (const id of g.pageIds) {
+        if (!primaryGroup.has(id)) primaryGroup.set(id, gi);
+      }
+    });
+    return [...displayNodes].sort((a, b) => {
+      const ga = primaryGroup.has(a.id) ? primaryGroup.get(a.id)! : Infinity;
+      const gb = primaryGroup.has(b.id) ? primaryGroup.get(b.id)! : Infinity;
+      return ga - gb;
+    });
+  }, [displayNodes, groups, showGroups]);
+
   const positions = useMemo(() => {
     const map = new Map<string, { x: number; y: number }>();
     if (focusedNode) {
@@ -146,17 +163,18 @@ export default function GraphPage() {
       });
       return map;
     }
-    displayNodes.forEach((n, i) => {
-      const angle = (2 * Math.PI * i) / Math.max(displayNodes.length, 1) - Math.PI / 2;
+    clusteredNodes.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(clusteredNodes.length, 1) - Math.PI / 2;
       map.set(n.id, {
         x: center + radius * Math.cos(angle),
         y: center + radius * Math.sin(angle),
       });
     });
     return map;
-  }, [displayNodes, focusedNode, center, radius]);
+  }, [clusteredNodes, displayNodes, focusedNode, center, radius]);
 
   const groupCircles = useMemo(() => {
+    if (!showGroups) return [];
     const visibleIds = new Set(displayNodes.map((n) => n.id));
     return groups
       .map((g) => {
@@ -169,7 +187,7 @@ export default function GraphPage() {
         return { ...g, memberIds, cx, cy, r };
       })
       .filter((g): g is GraphGroup & { memberIds: string[]; cx: number; cy: number; r: number } => g !== null);
-  }, [groups, displayNodes, positions]);
+  }, [groups, displayNodes, positions, showGroups]);
 
   const legend = useMemo(() => {
     const map = new Map<string, string>();
@@ -306,6 +324,17 @@ export default function GraphPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ArrowLeft size={14} />Tout le graphe
+            </button>
+          )}
+          {groups.length > 0 && (
+            <button
+              onClick={() => setShowGroups((v) => !v)}
+              title={showGroups ? "Masquer les groupes (tags)" : "Afficher les groupes (tags)"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                showGroups ? "bg-green-50 text-green-700 border-green-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {showGroups ? <CircleDot size={14} /> : <CircleOutline size={14} />}Groupes
             </button>
           )}
           {canManage && (
