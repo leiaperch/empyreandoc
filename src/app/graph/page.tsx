@@ -4,7 +4,8 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Sidebar from "@/components/Sidebar";
-import { Share2, Plus, X, Trash2, Check, ArrowLeft, Circle } from "lucide-react";
+import EmojiPicker from "@/components/EmojiPicker";
+import { Share2, Plus, X, Trash2, Check, ArrowLeft, Tag } from "lucide-react";
 
 interface GraphNode {
   id: string;
@@ -24,6 +25,7 @@ interface GraphGroup {
   id: string;
   name: string;
   color: string;
+  icon: string | null;
   pageIds: string[];
 }
 
@@ -38,7 +40,7 @@ const RELATION_PRESETS = [
   { type: "Autre", color: "#6b7280" },
 ];
 
-const GROUP_COLORS = [
+const TAG_COLORS = [
   "#16a34a","#7c3aed","#2563eb","#d97706","#dc2626","#0891b2","#db2777","#65a30d",
 ];
 
@@ -55,10 +57,6 @@ export default function GraphPage() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
-  const [groupModal, setGroupModal] = useState<{ id: string | null; name: string; color: string; memberIds: string[] } | null>(null);
-  const [groupSearch, setGroupSearch] = useState("");
-  const [savingGroup, setSavingGroup] = useState(false);
-
   const [createOpen, setCreateOpen] = useState(false);
   const [searchA, setSearchA] = useState("");
   const [searchB, setSearchB] = useState("");
@@ -70,6 +68,9 @@ export default function GraphPage() {
 
   const [editEdge, setEditEdge] = useState<{ id: string | null; source: string; target: string; type: string; color: string; x: number; y: number } | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [tagEdit, setTagEdit] = useState<{ name: string; color: string; icon: string; x: number; y: number } | null>(null);
+  const [savingTag, setSavingTag] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -154,8 +155,6 @@ export default function GraphPage() {
     });
     return map;
   }, [displayNodes, focusedNode, center, radius]);
-
-  const pageById = useMemo(() => new Map(allPages.map((p) => [p.id, p])), [allPages]);
 
   const groupCircles = useMemo(() => {
     const visibleIds = new Set(displayNodes.map((n) => n.id));
@@ -254,49 +253,21 @@ export default function GraphPage() {
     fetchGraph();
   };
 
-  const openGroupEditor = (g: GraphGroup) => {
-    setGroupModal({ id: g.id, name: g.name, color: g.color, memberIds: g.pageIds });
-    setGroupSearch("");
+  const openTagEditor = (g: GraphGroup, e: React.MouseEvent) => {
+    if (!canManage) return;
+    setTagEdit({ name: g.name, color: g.color, icon: g.icon ?? "", x: e.clientX, y: e.clientY });
   };
 
-  const groupSearchResults = groupSearch.trim()
-    ? allPages.filter((p) => p.title.toLowerCase().includes(groupSearch.toLowerCase()) && !groupModal?.memberIds.includes(p.id)).slice(0, 6)
-    : [];
-
-  const addGroupMember = (p: GraphNode) => {
-    setGroupModal((m) => m ? { ...m, memberIds: [...m.memberIds, p.id] } : m);
-    setGroupSearch("");
-  };
-
-  const removeGroupMember = (id: string) => {
-    setGroupModal((m) => m ? { ...m, memberIds: m.memberIds.filter((x) => x !== id) } : m);
-  };
-
-  const saveGroup = async () => {
-    if (!groupModal || !groupModal.name.trim() || groupModal.memberIds.length < 2) return;
-    setSavingGroup(true);
-    if (groupModal.id) {
-      await fetch(`/api/groups/${groupModal.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: groupModal.name.trim(), color: groupModal.color, pageIds: groupModal.memberIds }),
-      });
-    } else {
-      await fetch("/api/groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: groupModal.name.trim(), color: groupModal.color, pageIds: groupModal.memberIds }),
-      });
-    }
-    setSavingGroup(false);
-    setGroupModal(null);
-    fetchGraph();
-  };
-
-  const deleteGroup = async () => {
-    if (!groupModal?.id) return;
-    await fetch(`/api/groups/${groupModal.id}`, { method: "DELETE" });
-    setGroupModal(null);
+  const saveTagEdit = async () => {
+    if (!tagEdit) return;
+    setSavingTag(true);
+    await fetch(`/api/tags/${encodeURIComponent(tagEdit.name)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: tagEdit.color, icon: tagEdit.icon || null }),
+    });
+    setSavingTag(false);
+    setTagEdit(null);
     fetchGraph();
   };
 
@@ -309,7 +280,7 @@ export default function GraphPage() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden" onClick={() => setEditEdge(null)}>
+    <div className="flex h-screen bg-gray-50 overflow-hidden" onClick={() => { setEditEdge(null); setTagEdit(null); }}>
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-3">
@@ -338,20 +309,12 @@ export default function GraphPage() {
             </button>
           )}
           {canManage && (
-            <>
-              <button
-                onClick={() => { setGroupModal({ id: null, name: "", color: "#16a34a", memberIds: [] }); setGroupSearch(""); }}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors"
-              >
-                <Circle size={15} />Nouveau groupe
-              </button>
-              <button
-                onClick={() => setCreateOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                <Plus size={15} />Nouveau lien
-              </button>
-            </>
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <Plus size={15} />Nouveau lien
+            </button>
           )}
         </header>
 
@@ -361,13 +324,14 @@ export default function GraphPage() {
               <div className="text-center py-20 text-gray-400">
                 <Share2 size={48} className="mx-auto mb-3 opacity-25" />
                 <p className="text-lg font-medium text-gray-500">Aucune connexion trouvée</p>
-                <p className="text-sm mt-1">Ajoutez des liens, des mentions @personnage, ou créez un lien typé manuellement.</p>
+                <p className="text-sm mt-1">Ajoutez des liens, des mentions @personnage, des tags partagés, ou créez un lien typé manuellement.</p>
               </div>
             ) : (
               <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="max-w-full">
                 {groupCircles.map((g) => {
-                  const labelWidth = Math.max(56, g.name.length * 7 + 24);
-                  const label = g.name.length > 22 ? g.name.slice(0, 20) + "…" : g.name;
+                  const label = g.icon ? `${g.icon} ${g.name}` : g.name;
+                  const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
+                  const labelWidth = Math.max(56, displayLabel.length * 7 + 24);
                   return (
                     <g key={g.id}>
                       <circle
@@ -379,10 +343,10 @@ export default function GraphPage() {
                       <g
                         transform={`translate(${g.cx}, ${g.cy - g.r})`}
                         style={{ cursor: canManage ? "pointer" : "default" }}
-                        onClick={(ev) => { ev.stopPropagation(); if (canManage) openGroupEditor(g); }}
+                        onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
                       >
                         <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill={g.color} />
-                        <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{label}</text>
+                        <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{displayLabel}</text>
                       </g>
                     </g>
                   );
@@ -463,7 +427,7 @@ export default function GraphPage() {
               </div>
               <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
                 Clic sur une page : centrer le graphe sur ses liens. Double-clic : ouvrir la page.
-                {canManage && " Clic sur un lien : le modifier (les pointillés sont des références automatiques)."}
+                {canManage && " Clic sur un lien : le modifier. Clic sur une étiquette de groupe : modifier le tag."}
               </p>
             </div>
           )}
@@ -579,102 +543,6 @@ export default function GraphPage() {
         </div>
       )}
 
-      {/* Create/edit group modal */}
-      {groupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 mx-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">{groupModal.id ? "Modifier le groupe" : "Nouveau groupe"}</h2>
-              <button onClick={() => setGroupModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={16} /></button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <input
-                  value={groupModal.name}
-                  onChange={(e) => setGroupModal((m) => m ? { ...m, name: e.target.value } : m)}
-                  placeholder="Nom du groupe (ex : La Rébellion, Famille Aldric…)"
-                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                />
-                <input
-                  type="color"
-                  value={groupModal.color}
-                  onChange={(e) => setGroupModal((m) => m ? { ...m, color: e.target.value } : m)}
-                  className="w-9 h-9 border-none rounded cursor-pointer p-0 shrink-0"
-                />
-              </div>
-              <div className="flex gap-1.5">
-                {GROUP_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setGroupModal((m) => m ? { ...m, color: c } : m)}
-                    className={`w-6 h-6 rounded-full border-2 transition-all ${groupModal.color === c ? "border-gray-700 scale-110" : "border-transparent"}`}
-                    style={{ background: c }}
-                  />
-                ))}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                  Membres {groupModal.memberIds.length > 0 && <span className="text-gray-400">({groupModal.memberIds.length})</span>}
-                </label>
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {groupModal.memberIds.map((id) => {
-                    const p = pageById.get(id);
-                    return (
-                      <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-full text-xs">
-                        <span>{p?.icon ?? "📄"}</span>
-                        <span className="truncate max-w-[140px]">{p?.title ?? id}</span>
-                        <button onClick={() => removeGroupMember(id)}><X size={11} className="text-gray-400 hover:text-red-500" /></button>
-                      </span>
-                    );
-                  })}
-                </div>
-                <div className="relative">
-                  <input
-                    value={groupSearch}
-                    onChange={(e) => setGroupSearch(e.target.value)}
-                    placeholder="Ajouter une page au groupe…"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                  />
-                  {groupSearchResults.length > 0 && (
-                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-10 overflow-hidden">
-                      {groupSearchResults.map((p) => (
-                        <button key={p.id} onClick={() => addGroupMember(p)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center gap-2">
-                          <span>{p.icon}</span><span className="truncate">{p.title}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {groupModal.memberIds.length < 2 && (
-                  <p className="text-[11px] text-amber-600 mt-1.5">Ajoutez au moins deux pages pour former un groupe.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              {groupModal.id && (
-                <button onClick={deleteGroup} className="flex items-center gap-1.5 px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors">
-                  <Trash2 size={14} />Supprimer
-                </button>
-              )}
-              <button onClick={() => setGroupModal(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-                Annuler
-              </button>
-              <button
-                onClick={saveGroup}
-                disabled={savingGroup || !groupModal.name.trim() || groupModal.memberIds.length < 2}
-                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              >
-                {savingGroup ? "Enregistrement…" : "Enregistrer"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Edge edit popover */}
       {editEdge && (
         <div
@@ -720,6 +588,49 @@ export default function GraphPage() {
             )}
             <button onClick={saveEdgeEdit} disabled={saving} className="ml-auto flex items-center gap-1 px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
               <Check size={12} />{saving ? "…" : "Sauvegarder"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tag (group) quick editor */}
+      {tagEdit && (
+        <div
+          className="fixed z-50 bg-white border border-gray-200 rounded-xl shadow-2xl p-3 w-64"
+          style={{ left: Math.min(tagEdit.x, window.innerWidth - 280), top: Math.min(tagEdit.y, window.innerHeight - 220) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="text-[11px] text-gray-400 mb-2 flex items-center gap-1">
+            <Tag size={11} />Groupe basé sur le tag « {tagEdit.name} »
+          </p>
+          <div className="flex items-center gap-2 mb-2">
+            <EmojiPicker value={tagEdit.icon} onChange={(emoji) => setTagEdit((s) => s ? { ...s, icon: emoji } : s)} placeholder="🏷️" />
+            <input
+              type="color"
+              value={tagEdit.color}
+              onChange={(e) => setTagEdit((s) => s ? { ...s, color: e.target.value } : s)}
+              className="w-8 h-8 border-none rounded cursor-pointer p-0 shrink-0"
+            />
+          </div>
+          <div className="flex gap-1 mb-3">
+            {TAG_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setTagEdit((s) => s ? { ...s, color: c } : s)}
+                className={`w-5 h-5 rounded-full border-2 transition-all ${tagEdit.color === c ? "border-gray-700 scale-110" : "border-transparent"}`}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setTagEdit(null); router.push("/tags"); }}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Gérer les tags →
+            </button>
+            <button onClick={saveTagEdit} disabled={savingTag} className="ml-auto flex items-center gap-1 px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
+              <Check size={12} />{savingTag ? "…" : "Sauvegarder"}
             </button>
           </div>
         </div>

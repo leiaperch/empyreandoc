@@ -13,6 +13,7 @@ function canAccessCategory(
 
 const REFERENCE_TYPE = "Référence";
 const REFERENCE_COLOR = "#9ca3af";
+const FALLBACK_TAG_COLORS = ["#16a34a","#7c3aed","#2563eb","#d97706","#dc2626","#0891b2","#db2777","#65a30d"];
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -20,18 +21,19 @@ export async function GET() {
 
   const { role } = session.user;
 
-  const [pages, relations, groups] = await Promise.all([
+  const [pages, relations, tagRows] = await Promise.all([
     prisma.page.findMany({
       select: {
         id: true,
         title: true,
         content: true,
         linkedPageIds: true,
+        tags: true,
         category: { select: { name: true, icon: true, restricted: true, archived: true } },
       },
     }),
     prisma.pageRelation.findMany(),
-    prisma.pageGroup.findMany(),
+    prisma.tag.findMany(),
   ]);
 
   const accessible = pages.filter((p) => canAccessCategory(p.category, role));
@@ -91,16 +93,26 @@ export async function GET() {
     });
   }
 
-  const groupOutput = groups
-    .map((g) => ({
-      id: g.id,
-      name: g.name,
-      color: g.color,
-      pageIds: g.pageIds.split(",").map((s) => s.trim()).filter((id) => idSet.has(id)),
-    }))
+  // Groups ARE tags: pages sharing a tag are drawn together inside a circle.
+  const tagMeta = new Map(tagRows.map((t) => [t.name, { color: t.color, icon: t.icon }]));
+  const tagGroups = new Map<string, { color: string; icon: string | null; pageIds: string[] }>();
+  let fallbackIdx = 0;
+  for (const p of accessible) {
+    for (const tag of p.tags.split(",").map((s) => s.trim()).filter(Boolean)) {
+      if (!tagGroups.has(tag)) {
+        const known = tagMeta.get(tag);
+        const color = known?.color ?? FALLBACK_TAG_COLORS[fallbackIdx++ % FALLBACK_TAG_COLORS.length];
+        tagGroups.set(tag, { color, icon: known?.icon ?? null, pageIds: [] });
+      }
+      tagGroups.get(tag)!.pageIds.push(p.id);
+    }
+  }
+
+  const groupOutput = Array.from(tagGroups.entries())
+    .map(([name, g]) => ({ id: `tag:${name}`, name, color: g.color, icon: g.icon, pageIds: g.pageIds }))
     .filter((g) => g.pageIds.length >= 2);
 
-  // Keep only nodes that have at least one connection or belong to a group, to avoid clutter
+  // Keep only nodes that have at least one connection or share a tag with another page, to avoid clutter
   const connected = new Set<string>();
   for (const e of edges) { connected.add(e.source); connected.add(e.target); }
   for (const g of groupOutput) for (const id of g.pageIds) connected.add(id);
