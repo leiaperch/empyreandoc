@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Sidebar from "@/components/Sidebar";
-import { Share2, Plus, X, Trash2, Check } from "lucide-react";
+import { Share2, Plus, X, Trash2, Check, ArrowLeft } from "lucide-react";
 
 interface GraphNode {
   id: string;
@@ -42,6 +42,7 @@ export default function GraphPage() {
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [searchA, setSearchA] = useState("");
@@ -85,18 +86,6 @@ export default function GraphPage() {
   const center = size / 2;
   const radius = size / 2 - 90;
 
-  const positions = useMemo(() => {
-    const map = new Map<string, { x: number; y: number }>();
-    nodes.forEach((n, i) => {
-      const angle = (2 * Math.PI * i) / Math.max(nodes.length, 1) - Math.PI / 2;
-      map.set(n.id, {
-        x: center + radius * Math.cos(angle),
-        y: center + radius * Math.sin(angle),
-      });
-    });
-    return map;
-  }, [nodes, center, radius]);
-
   const neighbors = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const e of edges) {
@@ -108,23 +97,66 @@ export default function GraphPage() {
     return map;
   }, [edges]);
 
+  const focusedNode = focusedNodeId ? nodes.find((n) => n.id === focusedNodeId) ?? null : null;
+
+  // Reset focus if the focused node disappeared (e.g. its last relation was deleted)
+  useEffect(() => {
+    if (focusedNodeId && !focusedNode) setFocusedNodeId(null);
+  }, [focusedNodeId, focusedNode]);
+
+  const displayNodes = useMemo(() => {
+    if (!focusedNode) return nodes;
+    const ids = neighbors.get(focusedNode.id) ?? new Set<string>();
+    return nodes.filter((n) => n.id === focusedNode.id || ids.has(n.id));
+  }, [nodes, focusedNode, neighbors]);
+
+  const displayEdges = useMemo(() => {
+    if (!focusedNode) return edges;
+    return edges.filter((e) => e.source === focusedNode.id || e.target === focusedNode.id);
+  }, [edges, focusedNode]);
+
+  const positions = useMemo(() => {
+    const map = new Map<string, { x: number; y: number }>();
+    if (focusedNode) {
+      map.set(focusedNode.id, { x: center, y: center });
+      const others = displayNodes.filter((n) => n.id !== focusedNode.id);
+      const innerRadius = radius * 0.62;
+      others.forEach((n, i) => {
+        const angle = (2 * Math.PI * i) / Math.max(others.length, 1) - Math.PI / 2;
+        map.set(n.id, {
+          x: center + innerRadius * Math.cos(angle),
+          y: center + innerRadius * Math.sin(angle),
+        });
+      });
+      return map;
+    }
+    displayNodes.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(displayNodes.length, 1) - Math.PI / 2;
+      map.set(n.id, {
+        x: center + radius * Math.cos(angle),
+        y: center + radius * Math.sin(angle),
+      });
+    });
+    return map;
+  }, [displayNodes, focusedNode, center, radius]);
+
   const legend = useMemo(() => {
     const map = new Map<string, string>();
-    for (const e of edges) if (!map.has(e.type)) map.set(e.type, e.color);
+    for (const e of displayEdges) if (!map.has(e.type)) map.set(e.type, e.color);
     return Array.from(map.entries());
-  }, [edges]);
+  }, [displayEdges]);
 
-  // Any type already used (manually typed or via a preset) becomes selectable again afterwards.
+  // Any type already used anywhere in the full graph (not just the focused view) becomes selectable again afterwards.
   const availableTypes = useMemo(() => {
     const merged = [...RELATION_PRESETS];
     const known = new Set(RELATION_PRESETS.map((p) => p.type));
-    for (const [type, color] of legend) {
-      if (type === "Référence" || known.has(type)) continue;
-      known.add(type);
-      merged.push({ type, color });
+    for (const e of edges) {
+      if (e.type === "Référence" || known.has(e.type)) continue;
+      known.add(e.type);
+      merged.push({ type: e.type, color: e.color });
     }
     return merged;
-  }, [legend]);
+  }, [edges]);
 
   const resultsA = searchA.trim()
     ? allPages.filter((p) => p.title.toLowerCase().includes(searchA.toLowerCase())).slice(0, 6)
@@ -205,11 +237,28 @@ export default function GraphPage() {
         <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-3">
           <Share2 size={18} className="text-green-600" />
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">Graphe de liens</h1>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              {focusedNode ? (
+                <>
+                  <span>{focusedNode.icon}</span>
+                  <span>{focusedNode.title}</span>
+                </>
+              ) : (
+                "Graphe de liens"
+              )}
+            </h1>
             <p className="text-sm text-gray-400">
-              {nodes.length} page{nodes.length !== 1 ? "s" : ""} connectée{nodes.length !== 1 ? "s" : ""} · {edges.length} lien{edges.length !== 1 ? "s" : ""}
+              {displayNodes.length} page{displayNodes.length !== 1 ? "s" : ""} connectée{displayNodes.length !== 1 ? "s" : ""} · {displayEdges.length} lien{displayEdges.length !== 1 ? "s" : ""}
             </p>
           </div>
+          {focusedNode && (
+            <button
+              onClick={() => setFocusedNodeId(null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft size={14} />Tout le graphe
+            </button>
+          )}
           {canManage && (
             <button
               onClick={() => setCreateOpen(true)}
@@ -230,7 +279,7 @@ export default function GraphPage() {
               </div>
             ) : (
               <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="max-w-full">
-                {edges.map((e, i) => {
+                {displayEdges.map((e, i) => {
                   const a = positions.get(e.source);
                   const b = positions.get(e.target);
                   if (!a || !b) return null;
@@ -249,29 +298,40 @@ export default function GraphPage() {
                     />
                   );
                 })}
-                {nodes.map((n) => {
+                {displayNodes.map((n) => {
                   const pos = positions.get(n.id);
                   if (!pos) return null;
                   const isHovered = hovered === n.id;
                   const isNeighbor = hovered && neighbors.get(hovered)?.has(n.id);
                   const dimmed = hovered && !isHovered && !isNeighbor;
+                  const isFocused = focusedNode?.id === n.id;
                   return (
                     <g
                       key={n.id}
                       transform={`translate(${pos.x}, ${pos.y})`}
                       onMouseEnter={() => setHovered(n.id)}
                       onMouseLeave={() => setHovered(null)}
-                      onClick={(ev) => { ev.stopPropagation(); router.push(`/doc/${n.id}`); }}
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setFocusedNodeId((current) => (current === n.id ? null : n.id));
+                      }}
+                      onDoubleClick={(ev) => { ev.stopPropagation(); router.push(`/doc/${n.id}`); }}
                       style={{ cursor: "pointer", opacity: dimmed ? 0.35 : 1 }}
                     >
-                      <circle r={isHovered ? 22 : 18} fill="#16a34a" fillOpacity={0.15} stroke="#16a34a" strokeWidth={1.5} />
-                      <text textAnchor="middle" dominantBaseline="central" fontSize={16}>{n.icon}</text>
+                      <circle
+                        r={isFocused ? 26 : isHovered ? 22 : 18}
+                        fill="#16a34a"
+                        fillOpacity={isFocused ? 0.22 : 0.15}
+                        stroke="#16a34a"
+                        strokeWidth={isFocused ? 2.5 : 1.5}
+                      />
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={isFocused ? 19 : 16}>{n.icon}</text>
                       <text
                         textAnchor="middle"
-                        y={34}
+                        y={isFocused ? 40 : 34}
                         fontSize={11}
-                        fontWeight={isHovered ? 700 : 500}
-                        fill={isHovered ? "#14532d" : "#374151"}
+                        fontWeight={isHovered || isFocused ? 700 : 500}
+                        fill={isHovered || isFocused ? "#14532d" : "#374151"}
                       >
                         {n.title.length > 18 ? n.title.slice(0, 16) + "…" : n.title}
                       </text>
@@ -293,11 +353,10 @@ export default function GraphPage() {
                   </div>
                 ))}
               </div>
-              {canManage && (
-                <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
-                  Cliquez sur n&apos;importe quel lien pour le modifier. Les pointillés sont des références automatiques — les éditer les transforme en lien narratif dédié.
-                </p>
-              )}
+              <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
+                Clic sur une page : centrer le graphe sur ses liens. Double-clic : ouvrir la page.
+                {canManage && " Clic sur un lien : le modifier (les pointillés sont des références automatiques)."}
+              </p>
             </div>
           )}
         </div>
