@@ -66,6 +66,21 @@ model Page {
   favorites   Favorite[]
   comments    Comment[]
   versions    PageVersion[]
+  relationsA  PageRelation[] @relation("RelationA")
+  relationsB  PageRelation[] @relation("RelationB")
+}
+
+model PageRelation {
+  id        String   @id @default(cuid())
+  pageAId   String
+  pageA     Page     @relation("RelationA", fields: [pageAId], references: [id], onDelete: Cascade)
+  pageBId   String
+  pageB     Page     @relation("RelationB", fields: [pageBId], references: [id], onDelete: Cascade)
+  type      String   @default("Lié")
+  color     String   @default("#16a34a")
+  createdAt DateTime @default(now())
+
+  @@unique([pageAId, pageBId, type])
 }
 
 model PageVersion {
