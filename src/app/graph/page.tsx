@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Sidebar from "@/components/Sidebar";
-import { Share2, Plus, X, Trash2, Check, ArrowLeft } from "lucide-react";
+import { Share2, Plus, X, Trash2, Check, ArrowLeft, Circle } from "lucide-react";
 
 interface GraphNode {
   id: string;
@@ -20,6 +20,12 @@ interface GraphEdge {
   color: string;
   editable: boolean;
 }
+interface GraphGroup {
+  id: string;
+  name: string;
+  color: string;
+  pageIds: string[];
+}
 
 const RELATION_PRESETS = [
   { type: "Allié", color: "#16a34a" },
@@ -32,6 +38,10 @@ const RELATION_PRESETS = [
   { type: "Autre", color: "#6b7280" },
 ];
 
+const GROUP_COLORS = [
+  "#16a34a","#7c3aed","#2563eb","#d97706","#dc2626","#0891b2","#db2777","#65a30d",
+];
+
 export default function GraphPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -40,9 +50,14 @@ export default function GraphPage() {
 
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [groups, setGroups] = useState<GraphGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+
+  const [groupModal, setGroupModal] = useState<{ id: string | null; name: string; color: string; memberIds: string[] } | null>(null);
+  const [groupSearch, setGroupSearch] = useState("");
+  const [savingGroup, setSavingGroup] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [searchA, setSearchA] = useState("");
@@ -63,8 +78,8 @@ export default function GraphPage() {
   const fetchGraph = useCallback(() => {
     setLoading(true);
     fetch("/api/graph")
-      .then((r) => r.ok ? r.json() : { nodes: [], edges: [] })
-      .then((data) => { setNodes(data.nodes); setEdges(data.edges); setLoading(false); });
+      .then((r) => r.ok ? r.json() : { nodes: [], edges: [], groups: [] })
+      .then((data) => { setNodes(data.nodes); setEdges(data.edges); setGroups(data.groups ?? []); setLoading(false); });
   }, []);
 
   useEffect(() => {
@@ -139,6 +154,23 @@ export default function GraphPage() {
     });
     return map;
   }, [displayNodes, focusedNode, center, radius]);
+
+  const pageById = useMemo(() => new Map(allPages.map((p) => [p.id, p])), [allPages]);
+
+  const groupCircles = useMemo(() => {
+    const visibleIds = new Set(displayNodes.map((n) => n.id));
+    return groups
+      .map((g) => {
+        const memberIds = g.pageIds.filter((id) => visibleIds.has(id));
+        const pts = memberIds.map((id) => positions.get(id)).filter(Boolean) as { x: number; y: number }[];
+        if (pts.length < 2) return null;
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        const r = Math.max(...pts.map((p) => Math.hypot(p.x - cx, p.y - cy))) + 36;
+        return { ...g, memberIds, cx, cy, r };
+      })
+      .filter((g): g is GraphGroup & { memberIds: string[]; cx: number; cy: number; r: number } => g !== null);
+  }, [groups, displayNodes, positions]);
 
   const legend = useMemo(() => {
     const map = new Map<string, string>();
@@ -222,6 +254,52 @@ export default function GraphPage() {
     fetchGraph();
   };
 
+  const openGroupEditor = (g: GraphGroup) => {
+    setGroupModal({ id: g.id, name: g.name, color: g.color, memberIds: g.pageIds });
+    setGroupSearch("");
+  };
+
+  const groupSearchResults = groupSearch.trim()
+    ? allPages.filter((p) => p.title.toLowerCase().includes(groupSearch.toLowerCase()) && !groupModal?.memberIds.includes(p.id)).slice(0, 6)
+    : [];
+
+  const addGroupMember = (p: GraphNode) => {
+    setGroupModal((m) => m ? { ...m, memberIds: [...m.memberIds, p.id] } : m);
+    setGroupSearch("");
+  };
+
+  const removeGroupMember = (id: string) => {
+    setGroupModal((m) => m ? { ...m, memberIds: m.memberIds.filter((x) => x !== id) } : m);
+  };
+
+  const saveGroup = async () => {
+    if (!groupModal || !groupModal.name.trim() || groupModal.memberIds.length < 2) return;
+    setSavingGroup(true);
+    if (groupModal.id) {
+      await fetch(`/api/groups/${groupModal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: groupModal.name.trim(), color: groupModal.color, pageIds: groupModal.memberIds }),
+      });
+    } else {
+      await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: groupModal.name.trim(), color: groupModal.color, pageIds: groupModal.memberIds }),
+      });
+    }
+    setSavingGroup(false);
+    setGroupModal(null);
+    fetchGraph();
+  };
+
+  const deleteGroup = async () => {
+    if (!groupModal?.id) return;
+    await fetch(`/api/groups/${groupModal.id}`, { method: "DELETE" });
+    setGroupModal(null);
+    fetchGraph();
+  };
+
   if (status === "loading" || loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
@@ -260,12 +338,20 @@ export default function GraphPage() {
             </button>
           )}
           {canManage && (
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              <Plus size={15} />Nouveau lien
-            </button>
+            <>
+              <button
+                onClick={() => { setGroupModal({ id: null, name: "", color: "#16a34a", memberIds: [] }); setGroupSearch(""); }}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Circle size={15} />Nouveau groupe
+              </button>
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <Plus size={15} />Nouveau lien
+              </button>
+            </>
           )}
         </header>
 
@@ -279,6 +365,28 @@ export default function GraphPage() {
               </div>
             ) : (
               <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="max-w-full">
+                {groupCircles.map((g) => {
+                  const labelWidth = Math.max(56, g.name.length * 7 + 24);
+                  const label = g.name.length > 22 ? g.name.slice(0, 20) + "…" : g.name;
+                  return (
+                    <g key={g.id}>
+                      <circle
+                        cx={g.cx} cy={g.cy} r={g.r}
+                        fill={g.color} fillOpacity={0.07}
+                        stroke={g.color} strokeOpacity={0.6} strokeWidth={1.5} strokeDasharray="6 4"
+                        style={{ pointerEvents: "none" }}
+                      />
+                      <g
+                        transform={`translate(${g.cx}, ${g.cy - g.r})`}
+                        style={{ cursor: canManage ? "pointer" : "default" }}
+                        onClick={(ev) => { ev.stopPropagation(); if (canManage) openGroupEditor(g); }}
+                      >
+                        <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill={g.color} />
+                        <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{label}</text>
+                      </g>
+                    </g>
+                  );
+                })}
                 {displayEdges.map((e, i) => {
                   const a = positions.get(e.source);
                   const b = positions.get(e.target);
@@ -465,6 +573,102 @@ export default function GraphPage() {
                 className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
               >
                 {creating ? "Création…" : "Créer le lien"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/edit group modal */}
+      {groupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 mx-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">{groupModal.id ? "Modifier le groupe" : "Nouveau groupe"}</h2>
+              <button onClick={() => setGroupModal(null)} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={16} /></button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  value={groupModal.name}
+                  onChange={(e) => setGroupModal((m) => m ? { ...m, name: e.target.value } : m)}
+                  placeholder="Nom du groupe (ex : La Rébellion, Famille Aldric…)"
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+                <input
+                  type="color"
+                  value={groupModal.color}
+                  onChange={(e) => setGroupModal((m) => m ? { ...m, color: e.target.value } : m)}
+                  className="w-9 h-9 border-none rounded cursor-pointer p-0 shrink-0"
+                />
+              </div>
+              <div className="flex gap-1.5">
+                {GROUP_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setGroupModal((m) => m ? { ...m, color: c } : m)}
+                    className={`w-6 h-6 rounded-full border-2 transition-all ${groupModal.color === c ? "border-gray-700 scale-110" : "border-transparent"}`}
+                    style={{ background: c }}
+                  />
+                ))}
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                  Membres {groupModal.memberIds.length > 0 && <span className="text-gray-400">({groupModal.memberIds.length})</span>}
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {groupModal.memberIds.map((id) => {
+                    const p = pageById.get(id);
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-full text-xs">
+                        <span>{p?.icon ?? "📄"}</span>
+                        <span className="truncate max-w-[140px]">{p?.title ?? id}</span>
+                        <button onClick={() => removeGroupMember(id)}><X size={11} className="text-gray-400 hover:text-red-500" /></button>
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="relative">
+                  <input
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    placeholder="Ajouter une page au groupe…"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                  />
+                  {groupSearchResults.length > 0 && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-10 overflow-hidden">
+                      {groupSearchResults.map((p) => (
+                        <button key={p.id} onClick={() => addGroupMember(p)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center gap-2">
+                          <span>{p.icon}</span><span className="truncate">{p.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {groupModal.memberIds.length < 2 && (
+                  <p className="text-[11px] text-amber-600 mt-1.5">Ajoutez au moins deux pages pour former un groupe.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              {groupModal.id && (
+                <button onClick={deleteGroup} className="flex items-center gap-1.5 px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors">
+                  <Trash2 size={14} />Supprimer
+                </button>
+              )}
+              <button onClick={() => setGroupModal(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Annuler
+              </button>
+              <button
+                onClick={saveGroup}
+                disabled={savingGroup || !groupModal.name.trim() || groupModal.memberIds.length < 2}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {savingGroup ? "Enregistrement…" : "Enregistrer"}
               </button>
             </div>
           </div>

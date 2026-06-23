@@ -70,6 +70,14 @@ model Page {
   relationsB  PageRelation[] @relation("RelationB")
 }
 
+model PageGroup {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#16a34a")
+  pageIds   String   @default("")
+  createdAt DateTime @default(now())
+}
+
 model PageRelation {
   id        String   @id @default(cuid())
   pageAId   String

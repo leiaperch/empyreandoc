@@ -20,7 +20,7 @@ export async function GET() {
 
   const { role } = session.user;
 
-  const [pages, relations] = await Promise.all([
+  const [pages, relations, groups] = await Promise.all([
     prisma.page.findMany({
       select: {
         id: true,
@@ -31,6 +31,7 @@ export async function GET() {
       },
     }),
     prisma.pageRelation.findMany(),
+    prisma.pageGroup.findMany(),
   ]);
 
   const accessible = pages.filter((p) => canAccessCategory(p.category, role));
@@ -90,12 +91,23 @@ export async function GET() {
     });
   }
 
-  // Keep only nodes that have at least one connection to avoid clutter
+  const groupOutput = groups
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      pageIds: g.pageIds.split(",").map((s) => s.trim()).filter((id) => idSet.has(id)),
+    }))
+    .filter((g) => g.pageIds.length >= 2);
+
+  // Keep only nodes that have at least one connection or belong to a group, to avoid clutter
   const connected = new Set<string>();
   for (const e of edges) { connected.add(e.source); connected.add(e.target); }
+  for (const g of groupOutput) for (const id of g.pageIds) connected.add(id);
 
   return NextResponse.json({
     nodes: nodes.filter((n) => connected.has(n.id)),
     edges,
+    groups: groupOutput,
   });
 }
