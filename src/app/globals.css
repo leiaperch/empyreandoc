@@ -153,3 +153,21 @@ body {
   float: none;
 }
 
+/* ── Export PDF (impression navigateur) ── */
+@media print {
+  aside,
+  header {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+  }
+  #printable-content {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  body {
+    background: white !important;
+  }
+}
+

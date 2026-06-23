@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Sidebar from "@/components/Sidebar";
 import AttachmentPanel from "@/components/AttachmentPanel";
-import { ArrowLeft, Save, Check, Loader2, Trash2, Archive, Pencil, Eye, X, Plus, Star } from "lucide-react";
+import { ArrowLeft, Save, Check, Loader2, Trash2, Archive, Pencil, Eye, X, Plus, Star, History, Printer } from "lucide-react";
 import Link from "next/link";
+import VersionsModal from "@/components/VersionsModal";
+import CommentsSection from "@/components/CommentsSection";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
 
@@ -66,6 +68,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
   const [editing, setEditing] = useState(false);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [favorited, setFavorited] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
 
   const role = (session?.user as { role?: string })?.role;
@@ -115,7 +118,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
     );
   }, [status]);
 
-  const save = useCallback(async (t: string, c: string, tgs?: string[]) => {
+  const save = useCallback(async (t: string, c: string, tgs?: string[], opts?: { createVersion?: boolean }) => {
     setSaveStatus("saving");
     const res = await fetch(`/api/pages/${id}`, {
       method: "PUT",
@@ -124,6 +127,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
         title: t,
         content: c,
         tags: (tgs ?? tags).join(","),
+        createVersion: opts?.createVersion ?? false,
       }),
     });
     setSaveStatus(res.ok ? "saved" : "error");
@@ -249,7 +253,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
 
             {editing && (
               <button
-                onClick={() => save(title, content)}
+                onClick={() => save(title, content, undefined, { createVersion: true })}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 <Save size={14} />Sauvegarder
@@ -257,7 +261,10 @@ export default function DocPage({ params }: { params: { id: string } }) {
             )}
 
             <button
-              onClick={() => setEditing((v) => !v)}
+              onClick={() => {
+                if (editing) save(title, content, undefined, { createVersion: true });
+                setEditing((v) => !v);
+              }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
                 editing
                   ? "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200"
@@ -266,6 +273,20 @@ export default function DocPage({ params }: { params: { id: string } }) {
             >
               {editing ? <><Eye size={14} />Lecture</> : <><Pencil size={14} />Éditer</>}
             </button>
+
+            {canEdit && (
+              <button onClick={() => setVersionsOpen(true)} title="Historique des versions"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                <History size={16} />
+              </button>
+            )}
+
+            {!editing && (
+              <button onClick={() => window.print()} title="Exporter en PDF"
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                <Printer size={16} />
+              </button>
+            )}
 
             {editing && (
               <>
@@ -286,7 +307,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
           </div>
         </header>
 
-        <div className="max-w-4xl mx-auto px-6 py-8">
+        <div id="printable-content" className="max-w-4xl mx-auto px-6 py-8">
           {editing ? (
             <input
               value={title}
@@ -367,8 +388,20 @@ export default function DocPage({ params }: { params: { id: string } }) {
               })}
             </span>
           </div>
+
+          <div className="print:hidden">
+            <CommentsSection pageId={id} />
+          </div>
         </div>
       </main>
+
+      {versionsOpen && (
+        <VersionsModal
+          pageId={id}
+          onClose={() => setVersionsOpen(false)}
+          onRestored={fetchPage}
+        />
+      )}
     </div>
   );
 }

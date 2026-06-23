@@ -45,14 +45,24 @@ export async function PUT(
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
 
-  const { role } = session.user;
+  const { role, id: userId } = session.user;
   const { id } = await params;
-  const { title, content, archived, tags, linkedPageIds } = await req.json();
+  const { title, content, archived, tags, linkedPageIds, createVersion } = await req.json();
 
   const page = await prisma.page.findUnique({ where: { id }, include: { category: true } });
   if (!page) return NextResponse.json({ error: "Page introuvable." }, { status: 404 });
   if (!canAccessCategory(page.category, role)) {
     return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
+  }
+
+  const contentChanged =
+    (title !== undefined && title !== page.title) ||
+    (content !== undefined && content !== page.content);
+
+  if (createVersion && contentChanged) {
+    await prisma.pageVersion.create({
+      data: { pageId: id, title: page.title, content: page.content, tags: page.tags, authorId: userId },
+    });
   }
 
   const updated = await prisma.page.update({
@@ -70,6 +80,22 @@ export async function PUT(
       attachments: true,
     },
   });
+
+  if (contentChanged) {
+    const followers = await prisma.favorite.findMany({
+      where: { pageId: id, userId: { not: userId } },
+      select: { userId: true },
+    });
+    if (followers.length > 0) {
+      await prisma.notification.createMany({
+        data: followers.map((f) => ({
+          userId: f.userId,
+          pageId: id,
+          message: `« ${updated.title} » a été mise à jour.`,
+        })),
+      });
+    }
+  }
 
   return NextResponse.json(updated);
 }

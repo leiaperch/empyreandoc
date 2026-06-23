@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag, Search, Star } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag, Search, Star, Share2 } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
 import SearchModal from "./SearchModal";
+import NotificationBell from "./NotificationBell";
 
 interface FavoritePage {
   id: string;
@@ -471,6 +472,9 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center text-white font-bold text-sm">E</div>
           <span className="font-bold text-green-100 text-lg tracking-tight">EmpyreanDoc</span>
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </div>
         <div className="mt-1 text-xs text-green-400">
           {session?.user?.name} · <span className="capitalize">{role?.toLowerCase()}</span>
@@ -509,6 +513,13 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
             Tags
           </Link>
         )}
+        <Link
+          href="/graph"
+          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-green-200 hover:bg-green-700/40 hover:text-green-100 transition-colors"
+        >
+          <Share2 size={15} />
+          Graphe
+        </Link>
 
         {favorites.length > 0 && (
           <div className="mt-2">

@@ -44,6 +44,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
         }
         return false;
       },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [items, selected]);
 
     if (items.length === 0) {

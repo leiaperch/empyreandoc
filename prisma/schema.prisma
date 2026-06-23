@@ -16,17 +16,20 @@ enum Role {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  name      String
-  email     String     @unique
-  password  String
-  role      Role       @default(NARRA)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  pages     Page[]
-  accounts  Account[]
-  sessions  Session[]
-  favorites Favorite[]
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  password      String
+  role          Role           @default(NARRA)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  pages         Page[]
+  accounts      Account[]
+  sessions      Session[]
+  favorites     Favorite[]
+  comments      Comment[]
+  pageVersions  PageVersion[]
+  notifications Notification[]
 }
 
 model Category {
@@ -61,6 +64,40 @@ model Page {
   updatedAt   DateTime     @updatedAt
   attachments Attachment[]
   favorites   Favorite[]
+  comments    Comment[]
+  versions    PageVersion[]
+}
+
+model PageVersion {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @default("")
+  tags      String   @default("")
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pageId    String?
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model Favorite {
