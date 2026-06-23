@@ -10,6 +10,7 @@ import { ArrowLeft, Save, Check, Loader2, Trash2, Archive, Pencil, Eye, X, Plus,
 import Link from "next/link";
 import VersionsModal from "@/components/VersionsModal";
 import CommentsSection from "@/components/CommentsSection";
+import TableOfContents from "@/components/TableOfContents";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
 
@@ -216,6 +217,8 @@ export default function DocPage({ params }: { params: { id: string } }) {
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <Sidebar activePage={id} />
+
+      <TableOfContents containerId="printable-content" content={content} hidden={editing} />
 
       <main className="flex-1 overflow-y-auto">
         <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4">

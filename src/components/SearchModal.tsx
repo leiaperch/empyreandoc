@@ -11,6 +11,18 @@ interface SearchResult {
   snippet: string;
 }
 
+/** Met en gras les occurrences de `q` dans `text`. */
+function highlight(text: string, q: string): React.ReactNode {
+  const term = q.trim();
+  if (!term) return text;
+  const parts = text.split(new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig"));
+  return parts.map((part, i) =>
+    part.toLowerCase() === term.toLowerCase()
+      ? <mark key={i} className="bg-green-200 text-green-900 rounded px-0.5">{part}</mark>
+      : part
+  );
+}
+
 export default function SearchModal() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -120,9 +132,9 @@ export default function SearchModal() {
             >
               <span className="text-lg shrink-0 mt-0.5">{r.category.icon ?? <FileText size={16} className="text-gray-300" />}</span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-900 truncate">{r.title}</p>
+                <p className="text-sm font-medium text-gray-900 truncate">{highlight(r.title, query)}</p>
                 <p className="text-xs text-gray-400 truncate">{r.category.name}</p>
-                {r.snippet && <p className="text-xs text-gray-500 truncate mt-0.5">{r.snippet}</p>}
+                {r.snippet && <p className="text-xs text-gray-500 truncate mt-0.5">{highlight(r.snippet, query)}</p>}
               </div>
             </button>
           ))}

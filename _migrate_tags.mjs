@@ -18,6 +18,14 @@ await client.execute(`
 `);
 console.log("✅ Table Tag créée");
 
+// Add the "group" column if it doesn't exist yet (idempotent)
+try {
+  await client.execute(`ALTER TABLE "Tag" ADD COLUMN "group" TEXT`);
+  console.log('✅ Colonne "group" ajoutée');
+} catch {
+  console.log('ℹ️  Colonne "group" déjà présente');
+}
+
 // Collect all existing tags from pages
 const pages = await client.execute(`SELECT "tags" FROM "Page" WHERE "tags" != ''`);
 const tagSet = new Set();

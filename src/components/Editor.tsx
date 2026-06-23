@@ -9,7 +9,13 @@ import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle, Color, FontFamily, FontSize } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableCell } from "@tiptap/extension-table-cell";
 import { PageLink } from "./PageLinkExtension";
+import { Callout, type CalloutVariant } from "./CalloutExtension";
+import { Secret } from "./SecretExtension";
 import { createPersonnageMention } from "./PersonnageMention";
 import type { Personnage } from "./MentionList";
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -18,6 +24,7 @@ import {
   AlignLeft, AlignCenter, AlignRight,
   Link as LinkIcon, List, ListOrdered, Heading1, Heading2, Heading3,
   FileImage, BookOpen, Undo, Redo, LayoutTemplate, Highlighter, Minus,
+  Table2, Quote, Lock,
 } from "lucide-react";
 
 /* ─── Custom Image extension with data-align ────────────────────────────── */
@@ -50,6 +57,13 @@ const FONT_SIZES = ["10px","12px","14px","16px","18px","20px","24px","28px","32p
 
 const HIGHLIGHT_COLORS = [
   "#fef08a","#bbf7d0","#bfdbfe","#fecaca","#f9a8d4","#ddd6fe","#fed7aa","#d1fae5",
+];
+
+const CALLOUT_VARIANTS: { variant: CalloutVariant; label: string; emoji: string }[] = [
+  { variant: "info", label: "Information", emoji: "💡" },
+  { variant: "mj", label: "Note du MJ", emoji: "🎲" },
+  { variant: "warning", label: "Avertissement", emoji: "⚠️" },
+  { variant: "quote", label: "Citation", emoji: "❝" },
 ];
 
 const TEMPLATES = [
@@ -160,6 +174,7 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
   const [pageLinkOpen, setPageLinkOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
+  const [calloutOpen, setCalloutOpen] = useState(false);
   const [pages, setPages] = useState<Page[]>([]);
   const [pageSearch, setPageSearch] = useState("");
   const [fontColor, setFontColor] = useState("#000000");
@@ -189,10 +204,38 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
       Highlight.configure({ multicolor: true }),
       FontFamily,
       FontSize,
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Callout,
+      Secret,
       mentionExtension,
     ],
     content,
     editable,
+    editorProps: {
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith("image/")) {
+            const file = item.getAsFile();
+            if (!file) continue;
+            event.preventDefault();
+            const reader = new FileReader();
+            reader.onload = () => {
+              const { schema } = view.state;
+              const node = schema.nodes.image.create({ src: reader.result as string });
+              view.dispatch(view.state.tr.replaceSelectionWith(node));
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor }) => {
       onChange?.(editor.getHTML());
     },
@@ -404,6 +447,58 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
           <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive("orderedList")} title="Liste numérotée"><ListOrdered size={15} /></ToolbarBtn>
           <ToolbarBtn onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Séparateur de section"><Minus size={15} /></ToolbarBtn>
           <div className="w-px h-5 bg-gray-300 mx-1" />
+
+          {/* Tableau */}
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+            active={editor.isActive("table")}
+            title="Insérer un tableau"
+          ><Table2 size={15} /></ToolbarBtn>
+
+          {/* Callout / encadré */}
+          <div className="relative">
+            <ToolbarBtn onClick={() => setCalloutOpen((v) => !v)} active={editor.isActive("callout") || calloutOpen} title="Encadré">
+              <Quote size={15} />
+            </ToolbarBtn>
+            {calloutOpen && (
+              <div className="absolute top-full left-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+                {CALLOUT_VARIANTS.map((c) => (
+                  <button
+                    key={c.variant}
+                    onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().toggleCallout(c.variant).run(); setCalloutOpen(false); }}
+                    className="w-full text-left text-sm px-3 py-2 hover:bg-green-50 hover:text-green-800 flex items-center gap-2 transition-colors"
+                  >
+                    <span>{c.emoji}</span><span>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Bloc secret / MJ-only */}
+          <ToolbarBtn
+            onClick={() => editor.chain().focus().toggleSecret().run()}
+            active={editor.isActive("secret")}
+            title="Bloc secret (visible MJ uniquement)"
+          ><Lock size={15} /></ToolbarBtn>
+          <div className="w-px h-5 bg-gray-300 mx-1" />
+
+          {/* Table tools (contextual) */}
+          {editor.isActive("table") && (
+            <>
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().addRowAfter().run(); }}
+                className="px-1.5 py-1 rounded text-[11px] text-gray-600 hover:bg-green-100 transition-colors" title="Ajouter une ligne">+ Ligne</button>
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().addColumnAfter().run(); }}
+                className="px-1.5 py-1 rounded text-[11px] text-gray-600 hover:bg-green-100 transition-colors" title="Ajouter une colonne">+ Col</button>
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteRow().run(); }}
+                className="px-1.5 py-1 rounded text-[11px] text-gray-600 hover:bg-red-100 transition-colors" title="Supprimer la ligne">– Ligne</button>
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteColumn().run(); }}
+                className="px-1.5 py-1 rounded text-[11px] text-gray-600 hover:bg-red-100 transition-colors" title="Supprimer la colonne">– Col</button>
+              <button type="button" onMouseDown={(e) => { e.preventDefault(); editor.chain().focus().deleteTable().run(); }}
+                className="px-1.5 py-1 rounded text-[11px] text-red-500 hover:bg-red-100 transition-colors" title="Supprimer le tableau">⌫ Table</button>
+              <div className="w-px h-5 bg-gray-300 mx-1" />
+            </>
+          )}
 
           {/* Image alignment (contextual) */}
           {imgActive && (

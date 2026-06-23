@@ -134,6 +134,17 @@ model Tag {
   group String?
 }
 
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  title       String
+  date        String   @default("")
+  sortKey     Int      @default(0)
+  description String   @default("")
+  color       String   @default("#16a34a")
+  pageId      String?
+  createdAt   DateTime @default(now())
+}
+
 model Attachment {
   id        String   @id @default(cuid())
   name      String

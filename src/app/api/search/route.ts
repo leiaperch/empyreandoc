@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { stripSecretBlocks } from "@/lib/secrets";
 
 function canAccessCategory(
   category: { restricted: boolean; archived: boolean },
@@ -42,7 +43,8 @@ export async function GET(req: NextRequest) {
     .filter((p) => canAccessCategory(p.category, role))
     .slice(0, 20)
     .map((p) => {
-      const plain = p.content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const rawContent = role === "NARRA" ? stripSecretBlocks(p.content) : p.content;
+      const plain = rawContent.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       const idx = plain.toLowerCase().indexOf(q.toLowerCase());
       const snippet =
         idx >= 0

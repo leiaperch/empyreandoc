@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag, Search, Star, Share2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag, Search, Star, Share2, CalendarClock } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
 import SearchModal from "./SearchModal";
 import NotificationBell from "./NotificationBell";
+import ThemeToggle from "./ThemeToggle";
 
 interface FavoritePage {
   id: string;
@@ -472,7 +473,8 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center text-white font-bold text-sm">E</div>
           <span className="font-bold text-green-100 text-lg tracking-tight">EmpyreanDoc</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle />
             <NotificationBell />
           </div>
         </div>
@@ -519,6 +521,13 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
         >
           <Share2 size={15} />
           Graphe
+        </Link>
+        <Link
+          href="/timeline"
+          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-green-200 hover:bg-green-700/40 hover:text-green-100 transition-colors"
+        >
+          <CalendarClock size={15} />
+          Chronologie
         </Link>
 
         {favorites.length > 0 && (

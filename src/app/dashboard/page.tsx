@@ -138,6 +138,7 @@ export default function Dashboard() {
   };
 
   const role = (session?.user as { role?: string })?.role;
+  const canCreate = role === "SCENAR" || role === "ADMIN";
 
   const filteredPages = useMemo(
     () => pages.filter((p) => p.title.toLowerCase().includes(search.toLowerCase())),
@@ -194,7 +195,7 @@ export default function Dashboard() {
             <span className="hidden sm:inline">Grouper</span>
           </button>
 
-          {role === "SCENAR" && (
+          {canCreate && (
             <button
               onClick={() => openNewPage()}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
@@ -266,7 +267,7 @@ export default function Dashboard() {
             <div className="text-center py-16 text-gray-400">
               <FileText size={48} className="mx-auto mb-3 opacity-30" />
               <p className="text-lg font-medium">Aucune page pour l&apos;instant</p>
-              {role === "SCENAR" && (
+              {canCreate && (
                 <p className="text-sm mt-1">Créez votre première page avec le bouton ci-dessus.</p>
               )}
             </div>

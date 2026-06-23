@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { stripSecretBlocks } from "@/lib/secrets";
 
 function canAccessCategory(
   category: { restricted: boolean; archived: boolean },
@@ -33,6 +34,11 @@ export async function GET(
   if (!page) return NextResponse.json({ error: "Page introuvable." }, { status: 404 });
   if (!canAccessCategory(page.category, role)) {
     return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
+  }
+
+  // Les narrateurs ne reçoivent jamais le contenu des blocs secrets (MJ-only).
+  if (role === "NARRA") {
+    return NextResponse.json({ ...page, content: stripSecretBlocks(page.content) });
   }
 
   return NextResponse.json(page);
