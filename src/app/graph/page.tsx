@@ -56,7 +56,7 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<string | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [showGroups, setShowGroups] = useState(true);
+  const [showGroups, setShowGroups] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [searchA, setSearchA] = useState("");
@@ -315,7 +315,10 @@ export default function GraphPage() {
               )}
             </h1>
             <p className="text-sm text-gray-400">
-              {displayNodes.length} page{displayNodes.length !== 1 ? "s" : ""} connectée{displayNodes.length !== 1 ? "s" : ""} · {displayEdges.length} lien{displayEdges.length !== 1 ? "s" : ""}
+              {displayNodes.length} page{displayNodes.length !== 1 ? "s" : ""} connectée{displayNodes.length !== 1 ? "s" : ""}
+              {showGroups
+                ? ` · ${groupCircles.length} groupe${groupCircles.length !== 1 ? "s" : ""}`
+                : ` · ${displayEdges.length} lien${displayEdges.length !== 1 ? "s" : ""}`}
             </p>
           </div>
           {focusedNode && (
@@ -362,25 +365,24 @@ export default function GraphPage() {
                   const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
                   const labelWidth = Math.max(56, displayLabel.length * 7 + 24);
                   return (
-                    <g key={g.id}>
+                    <g
+                      key={g.id}
+                      style={{ cursor: canManage ? "pointer" : "default" }}
+                      onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
+                    >
                       <circle
                         cx={g.cx} cy={g.cy} r={g.r}
                         fill={g.color} fillOpacity={0.07}
                         stroke={g.color} strokeOpacity={0.6} strokeWidth={1.5} strokeDasharray="6 4"
-                        style={{ pointerEvents: "none" }}
                       />
-                      <g
-                        transform={`translate(${g.cx}, ${g.cy - g.r})`}
-                        style={{ cursor: canManage ? "pointer" : "default" }}
-                        onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
-                      >
+                      <g transform={`translate(${g.cx}, ${g.cy - g.r})`}>
                         <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill={g.color} />
                         <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{displayLabel}</text>
                       </g>
                     </g>
                   );
                 })}
-                {displayEdges.map((e, i) => {
+                {!showGroups && displayEdges.map((e, i) => {
                   const a = positions.get(e.source);
                   const b = positions.get(e.target);
                   if (!a || !b) return null;
@@ -443,22 +445,42 @@ export default function GraphPage() {
             )}
           </div>
 
-          {legend.length > 0 && (
-            <div className="w-48 shrink-0 bg-white border border-gray-100 rounded-xl p-4 sticky top-20">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Légende</h2>
-              <div className="space-y-2">
-                {legend.map(([type, color]) => (
-                  <div key={type} className="flex items-center gap-2 text-sm text-gray-700">
-                    <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
-                    <span className="truncate">{type}</span>
-                  </div>
-                ))}
+          {showGroups ? (
+            groupCircles.length > 0 && (
+              <div className="w-48 shrink-0 bg-white border border-gray-100 rounded-xl p-4 sticky top-20">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Groupes (tags)</h2>
+                <div className="space-y-2">
+                  {groupCircles.map((g) => (
+                    <div key={g.id} className="flex items-center gap-2 text-sm text-gray-700">
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: g.color }} />
+                      <span className="truncate">{g.icon ? `${g.icon} ` : ""}{g.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
+                  Double-clic sur une page : ouvrir la page.
+                  {canManage && " Clic sur un cercle : modifier la couleur/icône du tag."}
+                </p>
               </div>
-              <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
-                Clic sur une page : centrer le graphe sur ses liens. Double-clic : ouvrir la page.
-                {canManage && " Clic sur un lien : le modifier. Clic sur une étiquette de groupe : modifier le tag."}
-              </p>
-            </div>
+            )
+          ) : (
+            legend.length > 0 && (
+              <div className="w-48 shrink-0 bg-white border border-gray-100 rounded-xl p-4 sticky top-20">
+                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Légende</h2>
+                <div className="space-y-2">
+                  {legend.map(([type, color]) => (
+                    <div key={type} className="flex items-center gap-2 text-sm text-gray-700">
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
+                      <span className="truncate">{type}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
+                  Clic sur une page : centrer le graphe sur ses liens. Double-clic : ouvrir la page.
+                  {canManage && " Clic sur un lien : le modifier."}
+                </p>
+              </div>
+            )
           )}
         </div>
       </main>
