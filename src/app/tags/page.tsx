@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
+import EmojiPicker from "@/components/EmojiPicker";
 import { Tag, Pencil, Trash2, Check, X, Plus } from "lucide-react";
 
 interface TagObj {
@@ -146,12 +147,7 @@ export default function TagsPage() {
           {canManage && (
             <div className="bg-white border border-dashed border-green-300 rounded-xl p-4 space-y-2">
               <div className="flex items-center gap-3">
-                <input
-                  value={newIcon}
-                  onChange={(e) => setNewIcon(e.target.value)}
-                  placeholder="🏷️"
-                  className="w-10 text-center border border-gray-200 rounded-lg px-1 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
-                />
+                <EmojiPicker value={newIcon} onChange={setNewIcon} placeholder="🏷️" />
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
@@ -198,9 +194,7 @@ export default function TagsPage() {
                     {isEditing ? (
                       <div className="space-y-2">
                         <div className="flex items-center gap-3">
-                          <input value={editIcon} onChange={(e) => setEditIcon(e.target.value)}
-                            placeholder="🏷️"
-                            className="w-10 text-center border border-gray-200 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
+                          <EmojiPicker value={editIcon} onChange={setEditIcon} placeholder="🏷️" />
                           <input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") saveEdit(tag.name); if (e.key === "Escape") setEditId(null); }}
                             className="flex-1 border border-gray-200 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
