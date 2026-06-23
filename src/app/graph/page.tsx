@@ -159,11 +159,12 @@ export default function GraphPage() {
 
   interface VennCircle { id: string; name: string; color: string; icon: string | null; cx: number; cy: number; r: number }
 
-  const vennSize = 980;
-
   // True Euler/Venn-style layout: circles overlap proportionally to how many pages they share.
+  // The diagram is laid out in its own natural coordinate space, then the SVG viewBox is fitted
+  // tightly around the result — so it always fills the available space instead of floating tiny
+  // inside an oversized fixed canvas.
   const vennLayout = useMemo(() => {
-    const empty = { circles: [] as VennCircle[], nodePositions: new Map<string, { x: number; y: number }>() };
+    const empty = { circles: [] as VennCircle[], nodePositions: new Map<string, { x: number; y: number }>(), viewBox: "0 0 100 100" };
     if (!showGroups) return empty;
 
     const visibleIds = new Set(displayNodes.map((n) => n.id));
@@ -174,15 +175,13 @@ export default function GraphPage() {
 
     const n = active.length;
     const sizes = active.map((g) => g.pageIds.length);
-    // Smaller circles, more breathing room between them.
-    const radii = sizes.map((s) => Math.max(34, Math.min(110, 20 + Math.sqrt(s) * 16)));
+    const radii = sizes.map((s) => Math.max(60, Math.min(170, 40 + Math.sqrt(s) * 26)));
 
-    const vcenter = vennSize / 2;
-    const initSpread = Math.min(320, 110 + n * 36);
+    const initSpread = Math.min(420, 140 + n * 46);
     const centers = active.map((_, i) => {
-      if (n === 1) return { x: vcenter, y: vcenter };
+      if (n === 1) return { x: 0, y: 0 };
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-      return { x: vcenter + initSpread * Math.cos(angle), y: vcenter + initSpread * Math.sin(angle) };
+      return { x: initSpread * Math.cos(angle), y: initSpread * Math.sin(angle) };
     });
 
     const overlapCount = (i: number, j: number) => {
@@ -246,20 +245,11 @@ export default function GraphPage() {
       if (!anyOverlap) break;
     }
 
-    const minX = Math.min(...centers.map((c, i) => c.x - radii[i]));
-    const maxX = Math.max(...centers.map((c, i) => c.x + radii[i]));
-    const minY = Math.min(...centers.map((c, i) => c.y - radii[i]));
-    const maxY = Math.max(...centers.map((c, i) => c.y + radii[i]));
-    const margin = 110;
-    const scale = Math.min((vennSize - margin * 2) / Math.max(maxX - minX, 1), (vennSize - margin * 2) / Math.max(maxY - minY, 1), 1);
-    const offsetX = vennSize / 2 - ((minX + maxX) / 2) * scale;
-    const offsetY = vennSize / 2 - ((minY + maxY) / 2) * scale;
-
     const circles: VennCircle[] = active.map((g, i) => ({
       id: g.id, name: g.name, color: g.color, icon: g.icon,
-      cx: centers[i].x * scale + offsetX,
-      cy: centers[i].y * scale + offsetY,
-      r: radii[i] * scale,
+      cx: centers[i].x,
+      cy: centers[i].y,
+      r: radii[i],
     }));
 
     const memberOf = new Map<string, number[]>();
@@ -329,8 +319,28 @@ export default function GraphPage() {
       nodePositions.set(node.id, { x: px, y: py });
     }
 
-    return { circles, nodePositions };
-  }, [showGroups, groups, displayNodes, vennSize]);
+    // Fit the viewBox tightly around the circles (plus their top label) and the placed nodes,
+    // so the diagram always fills the rendered area instead of sitting tiny in empty space.
+    const labelPad = 34;
+    const xs = [
+      ...circles.map((c) => c.cx - c.r),
+      ...circles.map((c) => c.cx + c.r),
+      ...placed.map((p) => p.x),
+    ];
+    const ys = [
+      ...circles.map((c) => c.cy - c.r - labelPad),
+      ...circles.map((c) => c.cy + c.r),
+      ...placed.map((p) => p.y),
+    ];
+    const pad = 50;
+    const minX = Math.min(...xs) - pad;
+    const maxX = Math.max(...xs) + pad;
+    const minY = Math.min(...ys) - pad;
+    const maxY = Math.max(...ys) + pad;
+    const viewBox = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
+
+    return { circles, nodePositions, viewBox };
+  }, [showGroups, groups, displayNodes]);
 
   const legend = useMemo(() => {
     const map = new Map<string, string>();
@@ -502,7 +512,13 @@ export default function GraphPage() {
                 <p className="text-sm mt-1">Ajoutez des liens, des mentions @personnage, des tags partagés, ou créez un lien typé manuellement.</p>
               </div>
             ) : (
-              <svg viewBox={`0 0 ${showGroups ? vennSize : size} ${showGroups ? vennSize : size}`} width={showGroups ? vennSize : size} height={showGroups ? vennSize : size} className="max-w-full">
+              <svg
+                viewBox={showGroups ? vennLayout.viewBox : `0 0 ${size} ${size}`}
+                width={showGroups ? "100%" : size}
+                height={showGroups ? 720 : size}
+                preserveAspectRatio="xMidYMid meet"
+                className={showGroups ? "w-full" : "max-w-full"}
+              >
                 {vennLayout.circles.map((g) => {
                   const label = g.icon ? `${g.icon} ${g.name}` : g.name;
                   const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
