@@ -132,22 +132,6 @@ export default function GraphPage() {
     return edges.filter((e) => e.source === focusedNode.id || e.target === focusedNode.id);
   }, [edges, focusedNode]);
 
-  // Cluster nodes of the same group next to each other on the circle, so circles stay small and don't sprawl across the whole graph.
-  const clusteredNodes = useMemo(() => {
-    if (!showGroups || groups.length === 0) return displayNodes;
-    const primaryGroup = new Map<string, number>();
-    groups.forEach((g, gi) => {
-      for (const id of g.pageIds) {
-        if (!primaryGroup.has(id)) primaryGroup.set(id, gi);
-      }
-    });
-    return [...displayNodes].sort((a, b) => {
-      const ga = primaryGroup.has(a.id) ? primaryGroup.get(a.id)! : Infinity;
-      const gb = primaryGroup.has(b.id) ? primaryGroup.get(b.id)! : Infinity;
-      return ga - gb;
-    });
-  }, [displayNodes, groups, showGroups]);
-
   const positions = useMemo(() => {
     const map = new Map<string, { x: number; y: number }>();
     if (focusedNode) {
@@ -163,31 +147,146 @@ export default function GraphPage() {
       });
       return map;
     }
-    clusteredNodes.forEach((n, i) => {
-      const angle = (2 * Math.PI * i) / Math.max(clusteredNodes.length, 1) - Math.PI / 2;
+    displayNodes.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(displayNodes.length, 1) - Math.PI / 2;
       map.set(n.id, {
         x: center + radius * Math.cos(angle),
         y: center + radius * Math.sin(angle),
       });
     });
     return map;
-  }, [clusteredNodes, displayNodes, focusedNode, center, radius]);
+  }, [displayNodes, focusedNode, center, radius]);
 
-  const groupCircles = useMemo(() => {
-    if (!showGroups) return [];
+  interface VennCircle { id: string; name: string; color: string; icon: string | null; cx: number; cy: number; r: number }
+
+  // True Euler/Venn-style layout: circles overlap proportionally to how many pages they share.
+  const vennLayout = useMemo(() => {
+    const empty = { circles: [] as VennCircle[], nodePositions: new Map<string, { x: number; y: number }>() };
+    if (!showGroups) return empty;
+
     const visibleIds = new Set(displayNodes.map((n) => n.id));
-    return groups
-      .map((g) => {
-        const memberIds = g.pageIds.filter((id) => visibleIds.has(id));
-        const pts = memberIds.map((id) => positions.get(id)).filter(Boolean) as { x: number; y: number }[];
-        if (pts.length < 2) return null;
-        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-        const r = Math.max(...pts.map((p) => Math.hypot(p.x - cx, p.y - cy))) + 36;
-        return { ...g, memberIds, cx, cy, r };
-      })
-      .filter((g): g is GraphGroup & { memberIds: string[]; cx: number; cy: number; r: number } => g !== null);
-  }, [groups, displayNodes, positions, showGroups]);
+    const active = groups
+      .map((g) => ({ ...g, pageIds: g.pageIds.filter((id) => visibleIds.has(id)) }))
+      .filter((g) => g.pageIds.length >= 2);
+    if (active.length === 0) return empty;
+
+    const n = active.length;
+    const sizes = active.map((g) => g.pageIds.length);
+    const radii = sizes.map((s) => Math.max(46, Math.min(170, 30 + Math.sqrt(s) * 26)));
+
+    const initSpread = Math.min(220, 60 + n * 24);
+    const centers = active.map((_, i) => {
+      if (n === 1) return { x: center, y: center };
+      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      return { x: center + initSpread * Math.cos(angle), y: center + initSpread * Math.sin(angle) };
+    });
+
+    const overlapCount = (i: number, j: number) => {
+      const setA = new Set(active[i].pageIds);
+      let c = 0;
+      for (const id of active[j].pageIds) if (setA.has(id)) c++;
+      return c;
+    };
+
+    const PADDING = 16;
+    for (let iter = 0; iter < 300; iter++) {
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const ov = overlapCount(i, j);
+          const ri = radii[i], rj = radii[j];
+          const separated = ri + rj + PADDING;
+          const mostlyMerged = Math.max(Math.abs(ri - rj), 12);
+          const minSize = Math.min(sizes[i], sizes[j]);
+          const overlapFrac = minSize > 0 ? ov / minSize : 0;
+          const target = separated - overlapFrac * (separated - mostlyMerged);
+
+          const dx = centers[j].x - centers[i].x;
+          const dy = centers[j].y - centers[i].y;
+          const dist = Math.max(Math.hypot(dx, dy), 0.01);
+          const diff = ((dist - target) / dist) * 0.5;
+          const mx = dx * diff, my = dy * diff;
+          centers[i].x += mx; centers[i].y += my;
+          centers[j].x -= mx; centers[j].y -= my;
+        }
+      }
+    }
+
+    const minX = Math.min(...centers.map((c, i) => c.x - radii[i]));
+    const maxX = Math.max(...centers.map((c, i) => c.x + radii[i]));
+    const minY = Math.min(...centers.map((c, i) => c.y - radii[i]));
+    const maxY = Math.max(...centers.map((c, i) => c.y + radii[i]));
+    const margin = 60;
+    const scale = Math.min((size - margin * 2) / Math.max(maxX - minX, 1), (size - margin * 2) / Math.max(maxY - minY, 1), 1);
+    const offsetX = size / 2 - ((minX + maxX) / 2) * scale;
+    const offsetY = size / 2 - ((minY + maxY) / 2) * scale;
+
+    const circles: VennCircle[] = active.map((g, i) => ({
+      id: g.id, name: g.name, color: g.color, icon: g.icon,
+      cx: centers[i].x * scale + offsetX,
+      cy: centers[i].y * scale + offsetY,
+      r: radii[i] * scale,
+    }));
+
+    const memberOf = new Map<string, number[]>();
+    active.forEach((g, i) => {
+      for (const id of g.pageIds) {
+        if (!memberOf.has(id)) memberOf.set(id, []);
+        memberOf.get(id)!.push(i);
+      }
+    });
+
+    const nodeR = 18;
+    const nodePositions = new Map<string, { x: number; y: number }>();
+    const placed: { x: number; y: number }[] = [];
+
+    for (const node of displayNodes) {
+      const idxs = memberOf.get(node.id);
+      if (!idxs || idxs.length === 0) continue;
+
+      let px = idxs.reduce((s, i) => s + circles[i].cx, 0) / idxs.length;
+      let py = idxs.reduce((s, i) => s + circles[i].cy, 0) / idxs.length;
+
+      for (let iter = 0; iter < 60; iter++) {
+        let moved = false;
+        for (let i = 0; i < circles.length; i++) {
+          const c = circles[i];
+          const dx = px - c.cx, dy = py - c.cy;
+          const dist = Math.max(Math.hypot(dx, dy), 0.01);
+          if (idxs.includes(i)) {
+            if (dist > c.r - nodeR) {
+              const k = (c.r - nodeR) / dist;
+              px = c.cx + dx * k; py = c.cy + dy * k;
+              moved = true;
+            }
+          } else if (dist < c.r + nodeR * 0.6) {
+            const k = (c.r + nodeR * 0.6) / dist;
+            px = c.cx + dx * k; py = c.cy + dy * k;
+            moved = true;
+          }
+        }
+        if (!moved) break;
+      }
+
+      for (let iter = 0; iter < 20; iter++) {
+        let moved = false;
+        for (const o of placed) {
+          const dx = px - o.x, dy = py - o.y;
+          const dist = Math.max(Math.hypot(dx, dy), 0.01);
+          if (dist < nodeR * 1.8) {
+            const push = (nodeR * 1.8 - dist) / 2;
+            px += (dx / dist) * push; py += (dy / dist) * push;
+            moved = true;
+          }
+        }
+        if (!moved) break;
+      }
+
+      placed.push({ x: px, y: py });
+      nodePositions.set(node.id, { x: px, y: py });
+    }
+
+    return { circles, nodePositions };
+  }, [showGroups, groups, displayNodes, size, center]);
 
   const legend = useMemo(() => {
     const map = new Map<string, string>();
@@ -271,7 +370,7 @@ export default function GraphPage() {
     fetchGraph();
   };
 
-  const openTagEditor = (g: GraphGroup, e: React.MouseEvent) => {
+  const openTagEditor = (g: { name: string; color: string; icon: string | null }, e: React.MouseEvent) => {
     if (!canManage) return;
     setTagEdit({ name: g.name, color: g.color, icon: g.icon ?? "", x: e.clientX, y: e.clientY });
   };
@@ -317,7 +416,7 @@ export default function GraphPage() {
             <p className="text-sm text-gray-400">
               {displayNodes.length} page{displayNodes.length !== 1 ? "s" : ""} connectée{displayNodes.length !== 1 ? "s" : ""}
               {showGroups
-                ? ` · ${groupCircles.length} groupe${groupCircles.length !== 1 ? "s" : ""}`
+                ? ` · ${vennLayout.circles.length} groupe${vennLayout.circles.length !== 1 ? "s" : ""}`
                 : ` · ${displayEdges.length} lien${displayEdges.length !== 1 ? "s" : ""}`}
             </p>
           </div>
@@ -331,8 +430,8 @@ export default function GraphPage() {
           )}
           {groups.length > 0 && (
             <button
-              onClick={() => setShowGroups((v) => !v)}
-              title={showGroups ? "Masquer les groupes (tags)" : "Afficher les groupes (tags)"}
+              onClick={() => { setShowGroups((v) => !v); setFocusedNodeId(null); }}
+              title={showGroups ? "Revenir à la vue des liens" : "Afficher le diagramme de groupes (tags)"}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
                 showGroups ? "bg-green-50 text-green-700 border-green-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
               }`}
@@ -360,7 +459,7 @@ export default function GraphPage() {
               </div>
             ) : (
               <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="max-w-full">
-                {groupCircles.map((g) => {
+                {vennLayout.circles.map((g) => {
                   const label = g.icon ? `${g.icon} ${g.name}` : g.name;
                   const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
                   const labelWidth = Math.max(56, displayLabel.length * 7 + 24);
@@ -372,8 +471,8 @@ export default function GraphPage() {
                     >
                       <circle
                         cx={g.cx} cy={g.cy} r={g.r}
-                        fill={g.color} fillOpacity={0.07}
-                        stroke={g.color} strokeOpacity={0.6} strokeWidth={1.5} strokeDasharray="6 4"
+                        fill={g.color} fillOpacity={0.16}
+                        stroke={g.color} strokeOpacity={0.8} strokeWidth={1.5}
                       />
                       <g transform={`translate(${g.cx}, ${g.cy - g.r})`}>
                         <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill={g.color} />
@@ -401,13 +500,13 @@ export default function GraphPage() {
                     />
                   );
                 })}
-                {displayNodes.map((n) => {
-                  const pos = positions.get(n.id);
+                {(showGroups ? displayNodes.filter((n) => vennLayout.nodePositions.has(n.id)) : displayNodes).map((n) => {
+                  const pos = showGroups ? vennLayout.nodePositions.get(n.id) : positions.get(n.id);
                   if (!pos) return null;
                   const isHovered = hovered === n.id;
-                  const isNeighbor = hovered && neighbors.get(hovered)?.has(n.id);
-                  const dimmed = hovered && !isHovered && !isNeighbor;
-                  const isFocused = focusedNode?.id === n.id;
+                  const isNeighbor = !showGroups && hovered && neighbors.get(hovered)?.has(n.id);
+                  const dimmed = !showGroups && hovered && !isHovered && !isNeighbor;
+                  const isFocused = !showGroups && focusedNode?.id === n.id;
                   return (
                     <g
                       key={n.id}
@@ -416,7 +515,7 @@ export default function GraphPage() {
                       onMouseLeave={() => setHovered(null)}
                       onClick={(ev) => {
                         ev.stopPropagation();
-                        setFocusedNodeId((current) => (current === n.id ? null : n.id));
+                        if (!showGroups) setFocusedNodeId((current) => (current === n.id ? null : n.id));
                       }}
                       onDoubleClick={(ev) => { ev.stopPropagation(); router.push(`/doc/${n.id}`); }}
                       style={{ cursor: "pointer", opacity: dimmed ? 0.35 : 1 }}
@@ -446,11 +545,11 @@ export default function GraphPage() {
           </div>
 
           {showGroups ? (
-            groupCircles.length > 0 && (
+            vennLayout.circles.length > 0 && (
               <div className="w-48 shrink-0 bg-white border border-gray-100 rounded-xl p-4 sticky top-20">
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Groupes (tags)</h2>
                 <div className="space-y-2">
-                  {groupCircles.map((g) => (
+                  {vennLayout.circles.map((g) => (
                     <div key={g.id} className="flex items-center gap-2 text-sm text-gray-700">
                       <span className="w-3 h-3 rounded-full shrink-0" style={{ background: g.color }} />
                       <span className="truncate">{g.icon ? `${g.icon} ` : ""}{g.name}</span>
@@ -458,7 +557,7 @@ export default function GraphPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
-                  Double-clic sur une page : ouvrir la page.
+                  Les zones de chevauchement indiquent les pages partageant plusieurs tags. Double-clic sur une page : ouvrir la page.
                   {canManage && " Clic sur un cercle : modifier la couleur/icône du tag."}
                 </p>
               </div>
