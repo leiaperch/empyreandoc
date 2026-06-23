@@ -224,7 +224,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
           }}
           onBlur={() => { if (!newPageCreating) { setNewPageCatId(null); setNewPageTitle(""); } }}
           placeholder="Titre de la page…"
-          className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none placeholder-green-600"
+          className="flex-1 min-w-0 bg-white text-gray-900 border border-green-300 rounded px-1.5 py-0.5 text-xs outline-none placeholder-gray-400 focus:ring-2 focus:ring-green-400"
         />
         {newPageCreating && <span className="text-[10px] text-green-400 shrink-0">…</span>}
       </div>
@@ -243,7 +243,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
               value={renamePageTitle}
               onChange={(e) => setRenamePageTitle(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") saveRenamePage(e); if (e.key === "Escape") cancelRename(); }}
-              className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+              className="flex-1 min-w-0 bg-white text-gray-900 border border-green-300 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-2 focus:ring-green-400"
             />
             <button onClick={saveRenamePage} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
             <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
@@ -308,7 +308,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                 value={renameCatName}
                 onChange={(e) => setRenameCatName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") saveRenameCat(e); if (e.key === "Escape") cancelRename(); }}
-                className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+                className="flex-1 min-w-0 bg-white text-gray-900 border border-green-300 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-2 focus:ring-green-400"
               />
               <button onClick={saveRenameCat} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
               <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
@@ -417,7 +417,7 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
                           value={renameCatName}
                           onChange={(e) => setRenameCatName(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") saveRenameCat(e); if (e.key === "Escape") cancelRename(); }}
-                          className="flex-1 min-w-0 bg-green-800 text-green-100 border border-green-600 rounded px-1.5 py-0.5 text-xs outline-none"
+                          className="flex-1 min-w-0 bg-white text-gray-900 border border-green-300 rounded px-1.5 py-0.5 text-xs outline-none focus:ring-2 focus:ring-green-400"
                         />
                         <button onClick={saveRenameCat} className="p-0.5 text-green-300 hover:text-green-100 shrink-0"><Check size={11} /></button>
                         <button onClick={cancelRename} className="p-0.5 text-green-400 hover:text-green-200 shrink-0"><X size={11} /></button>
