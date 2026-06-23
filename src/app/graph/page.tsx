@@ -159,6 +159,8 @@ export default function GraphPage() {
 
   interface VennCircle { id: string; name: string; color: string; icon: string | null; cx: number; cy: number; r: number }
 
+  const vennSize = 980;
+
   // True Euler/Venn-style layout: circles overlap proportionally to how many pages they share.
   const vennLayout = useMemo(() => {
     const empty = { circles: [] as VennCircle[], nodePositions: new Map<string, { x: number; y: number }>() };
@@ -172,13 +174,15 @@ export default function GraphPage() {
 
     const n = active.length;
     const sizes = active.map((g) => g.pageIds.length);
-    const radii = sizes.map((s) => Math.max(46, Math.min(170, 30 + Math.sqrt(s) * 26)));
+    // Smaller circles, more breathing room between them.
+    const radii = sizes.map((s) => Math.max(34, Math.min(110, 20 + Math.sqrt(s) * 16)));
 
-    const initSpread = Math.min(220, 60 + n * 24);
+    const vcenter = vennSize / 2;
+    const initSpread = Math.min(320, 110 + n * 36);
     const centers = active.map((_, i) => {
-      if (n === 1) return { x: center, y: center };
+      if (n === 1) return { x: vcenter, y: vcenter };
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-      return { x: center + initSpread * Math.cos(angle), y: center + initSpread * Math.sin(angle) };
+      return { x: vcenter + initSpread * Math.cos(angle), y: vcenter + initSpread * Math.sin(angle) };
     });
 
     const overlapCount = (i: number, j: number) => {
@@ -188,14 +192,14 @@ export default function GraphPage() {
       return c;
     };
 
-    const PADDING = 16;
+    const PADDING = 34;
     for (let iter = 0; iter < 300; iter++) {
       for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
           const ov = overlapCount(i, j);
           const ri = radii[i], rj = radii[j];
           const separated = ri + rj + PADDING;
-          const mostlyMerged = Math.max(Math.abs(ri - rj), 12);
+          const mostlyMerged = Math.max(Math.abs(ri - rj), 18);
           const minSize = Math.min(sizes[i], sizes[j]);
           const overlapFrac = minSize > 0 ? ov / minSize : 0;
           const target = separated - overlapFrac * (separated - mostlyMerged);
@@ -215,10 +219,10 @@ export default function GraphPage() {
     const maxX = Math.max(...centers.map((c, i) => c.x + radii[i]));
     const minY = Math.min(...centers.map((c, i) => c.y - radii[i]));
     const maxY = Math.max(...centers.map((c, i) => c.y + radii[i]));
-    const margin = 60;
-    const scale = Math.min((size - margin * 2) / Math.max(maxX - minX, 1), (size - margin * 2) / Math.max(maxY - minY, 1), 1);
-    const offsetX = size / 2 - ((minX + maxX) / 2) * scale;
-    const offsetY = size / 2 - ((minY + maxY) / 2) * scale;
+    const margin = 110;
+    const scale = Math.min((vennSize - margin * 2) / Math.max(maxX - minX, 1), (vennSize - margin * 2) / Math.max(maxY - minY, 1), 1);
+    const offsetX = vennSize / 2 - ((minX + maxX) / 2) * scale;
+    const offsetY = vennSize / 2 - ((minY + maxY) / 2) * scale;
 
     const circles: VennCircle[] = active.map((g, i) => ({
       id: g.id, name: g.name, color: g.color, icon: g.icon,
@@ -235,7 +239,8 @@ export default function GraphPage() {
       }
     });
 
-    const nodeR = 18;
+    const nodeR = 14;
+    const minNodeSpacing = 78; // leaves room for the page title printed below each node
     const nodePositions = new Map<string, { x: number; y: number }>();
     const placed: { x: number; y: number }[] = [];
 
@@ -267,13 +272,13 @@ export default function GraphPage() {
         if (!moved) break;
       }
 
-      for (let iter = 0; iter < 20; iter++) {
+      for (let iter = 0; iter < 60; iter++) {
         let moved = false;
         for (const o of placed) {
           const dx = px - o.x, dy = py - o.y;
           const dist = Math.max(Math.hypot(dx, dy), 0.01);
-          if (dist < nodeR * 1.8) {
-            const push = (nodeR * 1.8 - dist) / 2;
+          if (dist < minNodeSpacing) {
+            const push = (minNodeSpacing - dist) / 2;
             px += (dx / dist) * push; py += (dy / dist) * push;
             moved = true;
           }
@@ -286,7 +291,7 @@ export default function GraphPage() {
     }
 
     return { circles, nodePositions };
-  }, [showGroups, groups, displayNodes, size, center]);
+  }, [showGroups, groups, displayNodes, vennSize]);
 
   const legend = useMemo(() => {
     const map = new Map<string, string>();
@@ -458,7 +463,7 @@ export default function GraphPage() {
                 <p className="text-sm mt-1">Ajoutez des liens, des mentions @personnage, des tags partagés, ou créez un lien typé manuellement.</p>
               </div>
             ) : (
-              <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="max-w-full">
+              <svg viewBox={`0 0 ${showGroups ? vennSize : size} ${showGroups ? vennSize : size}`} width={showGroups ? vennSize : size} height={showGroups ? vennSize : size} className="max-w-full">
                 {vennLayout.circles.map((g) => {
                   const label = g.icon ? `${g.icon} ${g.name}` : g.name;
                   const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
