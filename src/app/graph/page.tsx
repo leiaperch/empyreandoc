@@ -114,6 +114,18 @@ export default function GraphPage() {
     return Array.from(map.entries());
   }, [edges]);
 
+  // Any type already used (manually typed or via a preset) becomes selectable again afterwards.
+  const availableTypes = useMemo(() => {
+    const merged = [...RELATION_PRESETS];
+    const known = new Set(RELATION_PRESETS.map((p) => p.type));
+    for (const [type, color] of legend) {
+      if (type === "Référence" || known.has(type)) continue;
+      known.add(type);
+      merged.push({ type, color });
+    }
+    return merged;
+  }, [legend]);
+
   const resultsA = searchA.trim()
     ? allPages.filter((p) => p.title.toLowerCase().includes(searchA.toLowerCase())).slice(0, 6)
     : [];
@@ -358,7 +370,7 @@ export default function GraphPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1.5">Type de lien</label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  {RELATION_PRESETS.map((p) => (
+                  {availableTypes.map((p) => (
                     <button
                       key={p.type}
                       onClick={() => applyPreset(p)}
@@ -411,14 +423,17 @@ export default function GraphPage() {
             <p className="text-[11px] text-gray-400 mb-2">Référence automatique — modifiez-la pour en faire un lien narratif dédié.</p>
           )}
           <div className="flex flex-wrap gap-1 mb-2">
-            {RELATION_PRESETS.map((p) => (
+            {availableTypes.map((p) => (
               <button
                 key={p.type}
                 onClick={() => setEditEdge((s) => s ? { ...s, type: p.type, color: p.color } : s)}
-                className="w-5 h-5 rounded-full border-2 transition-all"
-                style={{ background: p.color, borderColor: editEdge.color === p.color ? "#374151" : "transparent" }}
-                title={p.type}
-              />
+                className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all ${
+                  editEdge.type === p.type ? "ring-1 ring-offset-1" : "opacity-80 hover:opacity-100"
+                }`}
+                style={{ background: `${p.color}1a`, color: p.color, borderColor: p.color }}
+              >
+                {p.type}
+              </button>
             ))}
           </div>
           <div className="flex items-center gap-2 mb-2">
