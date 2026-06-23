@@ -77,9 +77,79 @@ body {
 /* clearfix after floated images */
 .ProseMirror p:has(+ p) { overflow: hidden; }
 
+/* Mention @personnage */
+.ProseMirror .mention,
+.mention {
+  background: #f0fdf4;
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+  text-decoration: none !important;
+}
+
 /* Image selected highlight */
 .ProseMirror img.ProseMirror-selectednode {
   outline: 3px solid #16a34a;
   border-radius: 6px;
+}
+
+/* ── Mode lecture narratif ── */
+.reading-mode {
+  font-family: "Lora", Georgia, serif;
+  line-height: 1.85;
+  font-size: 1.05rem;
+}
+
+.reading-mode > p:first-of-type::first-letter {
+  font-family: "Cinzel", serif;
+  font-size: 3.4em;
+  line-height: 0.82;
+  float: left;
+  padding-right: 0.1em;
+  padding-top: 0.04em;
+  color: #14532d;
+}
+
+.reading-mode h1,
+.reading-mode h2,
+.reading-mode h3 {
+  font-family: "Playfair Display", Georgia, serif;
+}
+
+.reading-mode hr {
+  border: none;
+  height: 1px;
+  width: 55%;
+  margin: 2.75rem auto;
+  background: linear-gradient(to right, transparent, rgba(22, 163, 74, 0.4), transparent);
+  position: relative;
+}
+.reading-mode hr::after {
+  content: "✦";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #f9fafb;
+  padding: 0 0.7em;
+  color: #16a34a;
+  font-size: 0.95rem;
+}
+
+.reading-mode img[data-align="left"] {
+  float: left;
+  margin: 0.25rem 1.25rem 0.5rem 0;
+  max-width: 45%;
+  clear: left;
+}
+.reading-mode img[data-align="right"] {
+  float: right;
+  margin: 0.25rem 0 0.5rem 1.25rem;
+  max-width: 45%;
+  clear: right;
+}
+.reading-mode img[data-align="center"] {
+  display: block;
+  margin: 1rem auto;
+  float: none;
 }
 

@@ -79,6 +79,7 @@ model Tag {
   name  String  @unique
   color String  @default("#10b981")
   icon  String?
+  group String?
 }
 
 model Attachment {

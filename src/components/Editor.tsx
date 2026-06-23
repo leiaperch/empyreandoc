@@ -10,12 +10,14 @@ import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle, Color, FontFamily, FontSize } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import { PageLink } from "./PageLinkExtension";
+import { createPersonnageMention } from "./PersonnageMention";
+import type { Personnage } from "./MentionList";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   AlignLeft, AlignCenter, AlignRight,
   Link as LinkIcon, List, ListOrdered, Heading1, Heading2, Heading3,
-  FileImage, BookOpen, Undo, Redo, LayoutTemplate, Highlighter,
+  FileImage, BookOpen, Undo, Redo, LayoutTemplate, Highlighter, Minus,
 } from "lucide-react";
 
 /* ─── Custom Image extension with data-align ────────────────────────────── */
@@ -164,17 +166,13 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
   const [highlightColor, setHighlightColor] = useState("#fef08a");
   const imgInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
+  const personnagesRef = useRef<Personnage[]>([]);
+  const [mentionExtension] = useState(() => createPersonnageMention(personnagesRef));
 
-  /* ── Load Google Fonts once ── */
   useEffect(() => {
-    const id = "google-fonts-empyrean";
-    if (document.getElementById(id)) return;
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href =
-      "https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Lora:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Raleway:wght@300;400;600&family=IM+Fell+English:ital@0;1&display=swap";
-    document.head.appendChild(link);
+    fetch("/api/personnages").then((r) => r.ok ? r.json() : []).then((data) => {
+      personnagesRef.current = data;
+    });
   }, []);
 
   const editor = useEditor({
@@ -191,12 +189,14 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
       Highlight.configure({ multicolor: true }),
       FontFamily,
       FontSize,
+      mentionExtension,
     ],
     content,
     editable,
     onUpdate: ({ editor }) => {
       onChange?.(editor.getHTML());
     },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   });
 
   useEffect(() => {
@@ -402,6 +402,7 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
           {/* Lists */}
           <ToolbarBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive("bulletList")} title="Liste à puces"><List size={15} /></ToolbarBtn>
           <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive("orderedList")} title="Liste numérotée"><ListOrdered size={15} /></ToolbarBtn>
+          <ToolbarBtn onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Séparateur de section"><Minus size={15} /></ToolbarBtn>
           <div className="w-px h-5 bg-gray-300 mx-1" />
 
           {/* Image alignment (contextual) */}

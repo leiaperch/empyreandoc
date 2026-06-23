@@ -346,7 +346,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
             <Editor content={content} onChange={handleContentChange} />
           ) : (
             <div
-              className="prose prose-green max-w-none min-h-[200px] text-gray-800"
+              className="reading-mode prose prose-green max-w-none min-h-[200px] text-gray-800"
               dangerouslySetInnerHTML={{ __html: content || '<p class="text-gray-400 italic">Aucun contenu — cliquez sur Éditer pour commencer.</p>' }}
             />
           )}

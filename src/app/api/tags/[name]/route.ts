@@ -12,7 +12,7 @@ export async function PATCH(
 
   const { name: oldName } = await params;
   const decoded = decodeURIComponent(oldName);
-  const { name: newName, color, icon } = await req.json();
+  const { name: newName, color, icon, group } = await req.json();
 
   // If renaming, update all pages that reference this tag
   if (newName && newName.trim() !== decoded) {
@@ -32,11 +32,13 @@ export async function PATCH(
       ...(newName?.trim() && { name: newName.trim() }),
       ...(color && { color }),
       ...(icon !== undefined && { icon }),
+      ...(group !== undefined && { group }),
     },
     create: {
       name: newName?.trim() ?? decoded,
       color: color ?? "#10b981",
       icon: icon ?? null,
+      group: group ?? null,
     },
   });
 

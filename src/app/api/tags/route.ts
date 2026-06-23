@@ -27,6 +27,7 @@ export async function GET() {
     name,
     color: FALLBACK_COLORS[i % FALLBACK_COLORS.length],
     icon: null,
+    group: null,
   }));
 
   return NextResponse.json([...dbTags, ...extras]);
@@ -36,13 +37,13 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
 
-  const { name, color, icon } = await req.json();
+  const { name, color, icon, group } = await req.json();
   if (!name?.trim()) return NextResponse.json({ error: "Nom requis." }, { status: 400 });
 
   const tag = await prisma.tag.upsert({
     where: { name: name.trim() },
-    update: { ...(color && { color }), ...(icon !== undefined && { icon }) },
-    create: { name: name.trim(), color: color ?? "#10b981", icon: icon ?? null },
+    update: { ...(color && { color }), ...(icon !== undefined && { icon }), ...(group !== undefined && { group }) },
+    create: { name: name.trim(), color: color ?? "#10b981", icon: icon ?? null, group: group ?? null },
   });
   return NextResponse.json(tag, { status: 201 });
 }
