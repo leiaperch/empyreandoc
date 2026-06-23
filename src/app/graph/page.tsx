@@ -238,7 +238,7 @@ export default function GraphPage() {
     return map;
   }, [displayNodes, focusedNode, center, radius]);
 
-  interface VennBlob { id: string; name: string; color: string; icon: string | null; path: string; labelX: number; labelY: number }
+  interface VennBlob { id: string; name: string; color: string; icon: string | null; path: string; labelX: number; labelY: number; displayLabel: string; labelWidth: number }
 
   // Set visualization via real clustering instead of geometric circles: pages are pulled toward
   // the centroid of their own tags' anchors (anchors which themselves follow their members), then
@@ -281,7 +281,7 @@ export default function GraphPage() {
       nodePos.set(node.id, { x: cx + Math.cos(jitter) * 6, y: cy + Math.sin(jitter) * 6 });
     });
 
-    const minSpacing = 64;
+    const minSpacing = 92;
     for (let iter = 0; iter < 260; iter++) {
       // Tag anchors follow the centroid of their current members.
       for (let i = 0; i < n; i++) {
@@ -318,22 +318,55 @@ export default function GraphPage() {
       }
     }
 
-    const PADDING = 42;
+    const PADDING = 54;
     const blobs: VennBlob[] = active.map((g) => {
       const members = g.pageIds.filter((id) => nodePos.has(id)).map((id) => nodePos.get(id)!);
       const hullPts = buildBlobPoints(members, PADDING);
       const labelX = members.reduce((s, p) => s + p.x, 0) / members.length;
       const labelY = Math.min(...hullPts.map((p) => p.y));
-      return { id: g.id, name: g.name, color: g.color, icon: g.icon, path: smoothClosedPath(hullPts), labelX, labelY };
+      const label = g.icon ? `${g.icon} ${g.name}` : g.name;
+      const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
+      const labelWidth = Math.max(56, displayLabel.length * 7 + 24);
+      return { id: g.id, name: g.name, color: g.color, icon: g.icon, path: smoothClosedPath(hullPts), labelX, labelY: labelY - 16, displayLabel, labelWidth };
     });
 
-    // Fit the viewBox tightly around every blob and node, so the diagram always fills the
-    // rendered area instead of sitting tiny in empty space.
+    // Declutter the group labels so they never end up stacked on top of each other or on a node icon.
+    for (let iter = 0; iter < 150; iter++) {
+      let moved = false;
+      for (let a = 0; a < blobs.length; a++) {
+        for (let b = a + 1; b < blobs.length; b++) {
+          const ba = blobs[a], bb = blobs[b];
+          const dx = bb.labelX - ba.labelX;
+          const dy = bb.labelY - ba.labelY;
+          const minDx = ba.labelWidth / 2 + bb.labelWidth / 2 + 10;
+          const minDy = 26;
+          if (Math.abs(dx) < minDx && Math.abs(dy) < minDy) {
+            moved = true;
+            const overlapX = minDx - Math.abs(dx);
+            const overlapY = minDy - Math.abs(dy);
+            if (overlapX < overlapY) {
+              const push = (overlapX / 2) * (dx >= 0 ? 1 : -1);
+              ba.labelX -= push; bb.labelX += push;
+            } else {
+              const push = (overlapY / 2) * (dy >= 0 ? 1 : -1);
+              ba.labelY -= push; bb.labelY += push;
+            }
+          }
+        }
+      }
+      if (!moved) break;
+    }
+
+    // Fit the viewBox tightly around every blob, label and node, so the diagram always fills
+    // the rendered area instead of sitting tiny in empty space.
     const allPts = Array.from(nodePos.values());
-    const labelPad = 34;
-    const xs = allPts.map((p) => p.x);
-    const ys = [...allPts.map((p) => p.y), ...blobs.map((b) => b.labelY - labelPad)];
-    const pad = 70;
+    const xs = [
+      ...allPts.map((p) => p.x),
+      ...blobs.map((b) => b.labelX - b.labelWidth / 2),
+      ...blobs.map((b) => b.labelX + b.labelWidth / 2),
+    ];
+    const ys = [...allPts.map((p) => p.y), ...blobs.map((b) => b.labelY - 14)];
+    const pad = 90;
     const minX = Math.min(...xs) - pad;
     const maxX = Math.max(...xs) + pad;
     const minY = Math.min(...ys) - pad;
@@ -520,28 +553,23 @@ export default function GraphPage() {
                 preserveAspectRatio="xMidYMid meet"
                 className={showGroups ? "w-full" : "max-w-full"}
               >
-                {vennLayout.blobs.map((g) => {
-                  const label = g.icon ? `${g.icon} ${g.name}` : g.name;
-                  const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
-                  const labelWidth = Math.max(56, displayLabel.length * 7 + 24);
-                  return (
-                    <g
-                      key={g.id}
-                      style={{ cursor: canManage ? "pointer" : "default" }}
-                      onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
-                    >
-                      <path
-                        d={g.path}
-                        fill={g.color} fillOpacity={0.16}
-                        stroke={g.color} strokeOpacity={0.8} strokeWidth={1.5}
-                      />
-                      <g transform={`translate(${g.labelX}, ${g.labelY - 16})`}>
-                        <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill={g.color} />
-                        <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{displayLabel}</text>
-                      </g>
+                {vennLayout.blobs.map((g) => (
+                  <g
+                    key={g.id}
+                    style={{ cursor: canManage ? "pointer" : "default" }}
+                    onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
+                  >
+                    <path
+                      d={g.path}
+                      fill={g.color} fillOpacity={0.16}
+                      stroke={g.color} strokeOpacity={0.8} strokeWidth={1.5}
+                    />
+                    <g transform={`translate(${g.labelX}, ${g.labelY})`}>
+                      <rect x={-g.labelWidth / 2} y={-11} width={g.labelWidth} height={22} rx={11} fill={g.color} />
+                      <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{g.displayLabel}</text>
                     </g>
-                  );
-                })}
+                  </g>
+                ))}
                 {!showGroups && displayEdges.map((e, i) => {
                   const a = positions.get(e.source);
                   const b = positions.get(e.target);
@@ -582,17 +610,17 @@ export default function GraphPage() {
                       style={{ cursor: "pointer", opacity: dimmed ? 0.35 : 1 }}
                     >
                       <circle
-                        r={isFocused ? 26 : isHovered ? 22 : 18}
+                        r={isFocused ? 26 : isHovered ? 22 : showGroups ? 12 : 18}
                         fill="#16a34a"
                         fillOpacity={isFocused ? 0.22 : 0.15}
                         stroke="#16a34a"
                         strokeWidth={isFocused ? 2.5 : 1.5}
                       />
-                      <text textAnchor="middle" dominantBaseline="central" fontSize={isFocused ? 19 : 16}>{n.icon}</text>
+                      <text textAnchor="middle" dominantBaseline="central" fontSize={isFocused ? 19 : showGroups ? 12 : 16}>{n.icon}</text>
                       <text
                         textAnchor="middle"
-                        y={isFocused ? 40 : 34}
-                        fontSize={11}
+                        y={isFocused ? 40 : showGroups ? 25 : 34}
+                        fontSize={showGroups ? 10 : 11}
                         fontWeight={isHovered || isFocused ? 700 : 500}
                         fill={isHovered || isFocused ? "#14532d" : "#374151"}
                       >
