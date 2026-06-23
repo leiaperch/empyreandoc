@@ -4,8 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, FileText, Lock, FolderOpen, FolderPlus, Users, Pencil, Check, X, Tag, Search, Star } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
+import SearchModal from "./SearchModal";
+
+interface FavoritePage {
+  id: string;
+  title: string;
+  category: { name: string; icon: string | null };
+}
 
 interface Category {
   id: string;
@@ -30,6 +37,8 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pages, setPages] = useState<Record<string, { id: string; title: string }[]>>({});
+  const [favorites, setFavorites] = useState<FavoritePage[]>([]);
+  const [favOpen, setFavOpen] = useState(true);
 
   // Sub-category creation modal
   const [subCatModal, setSubCatModal] = useState<{ open: boolean; parentId: string; parentName: string }>({ open: false, parentId: "", parentName: "" });
@@ -72,7 +81,17 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
     }
   }, []);
 
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  const fetchFavorites = useCallback(async () => {
+    const res = await fetch("/api/favorites");
+    if (res.ok) setFavorites(await res.json());
+  }, []);
+
+  useEffect(() => { fetchCategories(); fetchFavorites(); }, [fetchCategories, fetchFavorites]);
+
+  useEffect(() => {
+    window.addEventListener("favorites-changed", fetchFavorites);
+    return () => window.removeEventListener("favorites-changed", fetchFavorites);
+  }, [fetchFavorites]);
 
   useEffect(() => {
     categories.forEach((cat) => {
@@ -459,6 +478,14 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-2 py-2">
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }))}
+          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-green-200 hover:bg-green-700/40 hover:text-green-100 transition-colors w-full"
+        >
+          <Search size={15} />
+          Rechercher
+          <kbd className="ml-auto text-[10px] px-1.5 py-0.5 bg-green-900/60 rounded text-green-300">Ctrl+K</kbd>
+        </button>
         <Link
           href="/dashboard"
           className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-green-200 hover:bg-green-700/40 hover:text-green-100 transition-colors"
@@ -483,10 +510,40 @@ export default function Sidebar({ activePage, onNewPage }: SidebarProps) {
           </Link>
         )}
 
+        {favorites.length > 0 && (
+          <div className="mt-2">
+            <button
+              onClick={() => setFavOpen((v) => !v)}
+              className="flex items-center gap-1.5 w-full px-3 py-1.5 text-xs font-semibold text-green-400 uppercase tracking-wide hover:text-green-300 transition-colors"
+            >
+              {favOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Favoris
+            </button>
+            {favOpen && (
+              <div>
+                {favorites.map((f) => (
+                  <Link
+                    key={f.id}
+                    href={`/doc/${f.id}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 ml-2 rounded-md text-sm transition-colors truncate ${
+                      activePage === f.id ? "bg-green-700/60 text-white" : "text-green-200 hover:bg-green-700/40 hover:text-green-100"
+                    }`}
+                  >
+                    <Star size={12} className="text-yellow-400 fill-yellow-400 shrink-0" />
+                    <span className="truncate">{f.title}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-2">
           {categories.map((cat) => renderCategory(cat))}
         </div>
       </nav>
+
+      <SearchModal />
 
       <div className="px-4 py-3 border-t border-green-800">
         <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${roleBadge.cls}`}>

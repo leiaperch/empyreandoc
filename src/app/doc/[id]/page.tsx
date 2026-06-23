@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Sidebar from "@/components/Sidebar";
 import AttachmentPanel from "@/components/AttachmentPanel";
-import { ArrowLeft, Save, Check, Loader2, Trash2, Archive, Pencil, Eye, X, Plus } from "lucide-react";
+import { ArrowLeft, Save, Check, Loader2, Trash2, Archive, Pencil, Eye, X, Plus, Star } from "lucide-react";
 import Link from "next/link";
 
 const Editor = dynamic(() => import("@/components/Editor"), { ssr: false });
@@ -65,6 +65,7 @@ export default function DocPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [favorited, setFavorited] = useState(false);
   const tagInputRef = useRef<HTMLInputElement>(null);
 
   const role = (session?.user as { role?: string })?.role;
@@ -92,6 +93,20 @@ export default function DocPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (status === "authenticated") fetchPage();
   }, [status, fetchPage]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch(`/api/pages/${id}/favorite`).then((r) => r.ok ? r.json() : { favorited: false }).then((d) => setFavorited(d.favorited));
+  }, [status, id]);
+
+  const toggleFavorite = async () => {
+    const res = await fetch(`/api/pages/${id}/favorite`, { method: "POST" });
+    if (res.ok) {
+      const { favorited: fav } = await res.json();
+      setFavorited(fav);
+      window.dispatchEvent(new Event("favorites-changed"));
+    }
+  };
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -216,6 +231,14 @@ export default function DocPage({ params }: { params: { id: string } }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={toggleFavorite}
+              title={favorited ? "Retirer des favoris" : "Ajouter aux favoris"}
+              className="p-1.5 text-gray-400 hover:text-yellow-500 hover:bg-yellow-50 rounded-lg transition-colors"
+            >
+              <Star size={16} className={favorited ? "text-yellow-400 fill-yellow-400" : ""} />
+            </button>
+
             {editing && (
               <span className="text-xs text-gray-400 flex items-center gap-1">
                 {saveStatus === "saving" && <><Loader2 size={12} className="animate-spin" /> Enregistrement…</>}

@@ -16,16 +16,17 @@ enum Role {
 }
 
 model User {
-  id        String    @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String
-  email     String    @unique
+  email     String     @unique
   password  String
-  role      Role      @default(NARRA)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  role      Role       @default(NARRA)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   pages     Page[]
   accounts  Account[]
   sessions  Session[]
+  favorites Favorite[]
 }
 
 model Category {
@@ -59,6 +60,18 @@ model Page {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   attachments Attachment[]
+  favorites   Favorite[]
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, pageId])
 }
 
 model Tag {

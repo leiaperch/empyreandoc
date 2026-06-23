@@ -4,7 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Sidebar from "@/components/Sidebar";
-import { Plus, LogOut, FileText, Clock, Search, Layers } from "lucide-react";
+import { Plus, LogOut, FileText, Clock, Search, Layers, Star, Users, Tag } from "lucide-react";
 
 interface Page {
   id: string;
@@ -13,6 +13,12 @@ interface Page {
   category: { id: string; name: string; icon: string | null; parentId: string | null };
   author: { name: string };
   _count: { attachments: number };
+}
+
+interface FavoritePage {
+  id: string;
+  title: string;
+  category: { name: string; icon: string | null };
 }
 
 interface NewPageModal {
@@ -58,6 +64,9 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string; icon: string | null }[]>([]);
   const [groupByCategory, setGroupByCategory] = useState(false);
+  const [favorites, setFavorites] = useState<FavoritePage[]>([]);
+  const [joueursCount, setJoueursCount] = useState(0);
+  const [tagsCount, setTagsCount] = useState(0);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -78,15 +87,34 @@ export default function Dashboard() {
         for (const child of c.children ?? []) flat.push({ id: child.id, name: `${c.name} / ${child.name}`, icon: child.icon });
       }
       setCategories(flat);
+      const personnagesCat = cats.find((c: { slug: string }) => c.slug === "personnages");
+      setJoueursCount(personnagesCat?.children?.length ?? 0);
     }
+  }, []);
+
+  const fetchFavorites = useCallback(async () => {
+    const res = await fetch("/api/favorites");
+    if (res.ok) setFavorites(await res.json());
+  }, []);
+
+  const fetchTagsCount = useCallback(async () => {
+    const res = await fetch("/api/tags");
+    if (res.ok) setTagsCount((await res.json()).length);
   }, []);
 
   useEffect(() => {
     if (status === "authenticated") {
       fetchPages();
       fetchCategories();
+      fetchFavorites();
+      fetchTagsCount();
     }
-  }, [status, fetchPages, fetchCategories]);
+  }, [status, fetchPages, fetchCategories, fetchFavorites, fetchTagsCount]);
+
+  useEffect(() => {
+    window.addEventListener("favorites-changed", fetchFavorites);
+    return () => window.removeEventListener("favorites-changed", fetchFavorites);
+  }, [fetchFavorites]);
 
   const openNewPage = (categoryId = "") => {
     setModal({ open: true, categoryId: categoryId || (categories[0]?.id ?? "") });
@@ -185,14 +213,54 @@ export default function Dashboard() {
         </header>
 
         <div className="px-6 py-6">
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Bonjour, {session?.user?.name} 👋
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">
-              {filteredPages.length} page{filteredPages.length !== 1 ? "s" : ""} accessible{filteredPages.length !== 1 ? "s" : ""}
-            </p>
+          <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Bonjour, {session?.user?.name} 👋
+              </h1>
+              <p className="text-gray-500 text-sm mt-1">
+                {filteredPages.length} page{filteredPages.length !== 1 ? "s" : ""} accessible{filteredPages.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-lg text-sm">
+                <FileText size={14} className="text-green-500" />
+                <span className="font-semibold text-gray-800">{pages.length}</span>
+                <span className="text-gray-400">page{pages.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-lg text-sm">
+                <Users size={14} className="text-green-500" />
+                <span className="font-semibold text-gray-800">{joueursCount}</span>
+                <span className="text-gray-400">joueur{joueursCount !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-lg text-sm">
+                <Tag size={14} className="text-green-500" />
+                <span className="font-semibold text-gray-800">{tagsCount}</span>
+                <span className="text-gray-400">tag{tagsCount !== 1 ? "s" : ""}</span>
+              </div>
+            </div>
           </div>
+
+          {favorites.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                <Star size={13} className="text-yellow-400 fill-yellow-400" />
+                Favoris
+              </h2>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {favorites.map((f) => (
+                  <a
+                    key={f.id}
+                    href={`/doc/${f.id}`}
+                    className="flex items-center gap-2 px-3.5 py-2.5 bg-white border border-gray-100 rounded-xl hover:border-yellow-300 hover:shadow-md transition-all shrink-0 max-w-[220px]"
+                  >
+                    <span className="text-base shrink-0">{f.category.icon ?? "📄"}</span>
+                    <span className="text-sm font-medium text-gray-800 truncate">{f.title}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {filteredPages.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
