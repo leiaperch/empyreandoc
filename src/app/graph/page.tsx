@@ -193,6 +193,15 @@ export default function GraphPage() {
     };
 
     const PADDING = 34;
+    // Pairs that share zero pages must NEVER end up touching — this is a hard constraint,
+    // checked separately from the soft proportional-overlap spring below.
+    const disjointPairs: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (overlapCount(i, j) === 0) disjointPairs.push([i, j]);
+      }
+    }
+
     for (let iter = 0; iter < 300; iter++) {
       for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
@@ -213,6 +222,28 @@ export default function GraphPage() {
           centers[j].x -= mx; centers[j].y -= my;
         }
       }
+    }
+
+    // Hard "declash" pass: force-separate disjoint circles that still overlap after the
+    // proportional relaxation above (this can happen when several groups are pulled toward
+    // a shared hub group, dragging two unrelated circles into each other along the way).
+    for (let iter = 0; iter < 150; iter++) {
+      let anyOverlap = false;
+      for (const [i, j] of disjointPairs) {
+        const ri = radii[i], rj = radii[j];
+        const minDist = ri + rj + PADDING;
+        const dx = centers[j].x - centers[i].x;
+        const dy = centers[j].y - centers[i].y;
+        const dist = Math.max(Math.hypot(dx, dy), 0.01);
+        if (dist < minDist) {
+          anyOverlap = true;
+          const diff = (minDist - dist) / dist / 2;
+          const mx = dx * diff, my = dy * diff;
+          centers[i].x -= mx; centers[i].y -= my;
+          centers[j].x += mx; centers[j].y += my;
+        }
+      }
+      if (!anyOverlap) break;
     }
 
     const minX = Math.min(...centers.map((c, i) => c.x - radii[i]));
@@ -244,14 +275,22 @@ export default function GraphPage() {
     const nodePositions = new Map<string, { x: number; y: number }>();
     const placed: { x: number; y: number }[] = [];
 
-    for (const node of displayNodes) {
+    // Place nodes that belong to several circles first, so the intersection zones get
+    // first pick of space; nodes with a single tag are slotted in around them afterwards.
+    const orderedNodes = [...displayNodes].sort((a, b) => {
+      const la = memberOf.get(a.id)?.length ?? 0;
+      const lb = memberOf.get(b.id)?.length ?? 0;
+      return lb - la;
+    });
+
+    for (const node of orderedNodes) {
       const idxs = memberOf.get(node.id);
       if (!idxs || idxs.length === 0) continue;
 
       let px = idxs.reduce((s, i) => s + circles[i].cx, 0) / idxs.length;
       let py = idxs.reduce((s, i) => s + circles[i].cy, 0) / idxs.length;
 
-      for (let iter = 0; iter < 60; iter++) {
+      for (let iter = 0; iter < 150; iter++) {
         let moved = false;
         for (let i = 0; i < circles.length; i++) {
           const c = circles[i];
@@ -263,8 +302,8 @@ export default function GraphPage() {
               px = c.cx + dx * k; py = c.cy + dy * k;
               moved = true;
             }
-          } else if (dist < c.r + nodeR * 0.6) {
-            const k = (c.r + nodeR * 0.6) / dist;
+          } else if (dist < c.r + nodeR * 1.1) {
+            const k = (c.r + nodeR * 1.1) / dist;
             px = c.cx + dx * k; py = c.cy + dy * k;
             moved = true;
           }
