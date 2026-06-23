@@ -44,6 +44,87 @@ const TAG_COLORS = [
   "#16a34a","#7c3aed","#2563eb","#d97706","#dc2626","#0891b2","#db2777","#65a30d",
 ];
 
+type Pt = { x: number; y: number };
+
+// Standard monotone-chain convex hull.
+function convexHull(points: Pt[]): Pt[] {
+  if (points.length < 3) return points;
+  const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Pt, a: Pt, b: Pt) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Pt[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Pt[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop(); lower.pop();
+  return lower.concat(upper);
+}
+
+// Builds a padded outline around a set of member points: an ellipse for 1-2 points,
+// otherwise the convex hull expanded outward from its centroid.
+function buildBlobPoints(members: Pt[], padding: number): Pt[] {
+  if (members.length === 1) {
+    const out: Pt[] = [];
+    for (let k = 0; k < 14; k++) {
+      const a = (2 * Math.PI * k) / 14;
+      out.push({ x: members[0].x + padding * Math.cos(a), y: members[0].y + padding * Math.sin(a) });
+    }
+    return out;
+  }
+  const hull = convexHull(members);
+  if (hull.length < 3) {
+    // Degenerate (collinear / 2 points): build a capsule around the line.
+    const a = members[0], b = members[members.length - 1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.max(Math.hypot(dx, dy), 0.01);
+    const ux = dx / len, uy = dy / len;
+    const px = -uy, py = ux;
+    const out: Pt[] = [];
+    const steps = 8;
+    for (let k = 0; k <= steps; k++) {
+      const t = (Math.PI * k) / steps - Math.PI / 2;
+      out.push({ x: b.x + ux * padding * Math.cos(t) + px * padding * Math.sin(t), y: b.y + uy * padding * Math.cos(t) + py * padding * Math.sin(t) });
+    }
+    for (let k = 0; k <= steps; k++) {
+      const t = (Math.PI * k) / steps + Math.PI / 2;
+      out.push({ x: a.x + ux * padding * Math.cos(t) + px * padding * Math.sin(t), y: a.y + uy * padding * Math.cos(t) + py * padding * Math.sin(t) });
+    }
+    return out;
+  }
+  const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
+  const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
+  return hull.map((p) => {
+    const dx = p.x - cx, dy = p.y - cy;
+    const d = Math.max(Math.hypot(dx, dy), 0.01);
+    return { x: p.x + (dx / d) * padding, y: p.y + (dy / d) * padding };
+  });
+}
+
+// Smooth closed spline through a set of points, for an organic "blob" outline instead of a sharp polygon.
+function smoothClosedPath(points: Pt[]): string {
+  const n = points.length;
+  if (n < 3) return "";
+  let path = `M ${points[0].x} ${points[0].y} `;
+  for (let i = 0; i < n; i++) {
+    const p0 = points[(i - 1 + n) % n];
+    const p1 = points[i];
+    const p2 = points[(i + 1) % n];
+    const p3 = points[(i + 2) % n];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    path += `C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y} `;
+  }
+  return path + "Z";
+}
+
 export default function GraphPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -157,14 +238,14 @@ export default function GraphPage() {
     return map;
   }, [displayNodes, focusedNode, center, radius]);
 
-  interface VennCircle { id: string; name: string; color: string; icon: string | null; cx: number; cy: number; r: number }
+  interface VennBlob { id: string; name: string; color: string; icon: string | null; path: string; labelX: number; labelY: number }
 
-  // True Euler/Venn-style layout: circles overlap proportionally to how many pages they share.
-  // The diagram is laid out in its own natural coordinate space, then the SVG viewBox is fitted
-  // tightly around the result — so it always fills the available space instead of floating tiny
-  // inside an oversized fixed canvas.
+  // Set visualization via real clustering instead of geometric circles: pages are pulled toward
+  // the centroid of their own tags' anchors (anchors which themselves follow their members), then
+  // each tag's zone is drawn as a free-form shape wrapped tightly around its actual members. This
+  // guarantees a page only ever appears inside the zones of tags it really has — no approximation.
   const vennLayout = useMemo(() => {
-    const empty = { circles: [] as VennCircle[], nodePositions: new Map<string, { x: number; y: number }>(), viewBox: "0 0 100 100" };
+    const empty = { blobs: [] as VennBlob[], nodePositions: new Map<string, { x: number; y: number }>(), viewBox: "0 0 100 100" };
     if (!showGroups) return empty;
 
     const visibleIds = new Set(displayNodes.map((n) => n.id));
@@ -173,24 +254,6 @@ export default function GraphPage() {
       .filter((g) => g.pageIds.length >= 2);
     if (active.length === 0) return empty;
 
-    const n = active.length;
-    const sizes = active.map((g) => g.pageIds.length);
-    const radii = sizes.map((s) => Math.max(60, Math.min(170, 40 + Math.sqrt(s) * 26)));
-
-    const initSpread = Math.min(420, 140 + n * 46);
-    const centers = active.map((_, i) => {
-      if (n === 1) return { x: 0, y: 0 };
-      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-      return { x: initSpread * Math.cos(angle), y: initSpread * Math.sin(angle) };
-    });
-
-    const overlapCount = (i: number, j: number) => {
-      const setA = new Set(active[i].pageIds);
-      let c = 0;
-      for (const id of active[j].pageIds) if (setA.has(id)) c++;
-      return c;
-    };
-
     const memberOf = new Map<string, number[]>();
     active.forEach((g, i) => {
       for (const id of g.pageIds) {
@@ -198,161 +261,86 @@ export default function GraphPage() {
         memberOf.get(id)!.push(i);
       }
     });
-    // Pages with 3+ tags need their circles pulled toward a real common region — pairwise
-    // overlap alone doesn't guarantee a shared triple (or higher) intersection exists.
-    const multiMemberships = Array.from(memberOf.values()).filter((idxs) => idxs.length >= 2);
 
-    const PADDING = 34;
-    // Pairs that share zero pages must NEVER end up touching — this is a hard constraint,
-    // checked separately from the soft proportional-overlap spring below.
-    const disjointPairs: [number, number][] = [];
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        if (overlapCount(i, j) === 0) disjointPairs.push([i, j]);
-      }
-    }
+    const vennNodes = displayNodes.filter((n) => memberOf.has(n.id));
+    if (vennNodes.length === 0) return empty;
 
-    for (let iter = 0; iter < 300; iter++) {
-      for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-          const ov = overlapCount(i, j);
-          const ri = radii[i], rj = radii[j];
-          const separated = ri + rj + PADDING;
-          const mostlyMerged = Math.max(Math.abs(ri - rj), 18);
-          const minSize = Math.min(sizes[i], sizes[j]);
-          const overlapFrac = minSize > 0 ? ov / minSize : 0;
-          const target = separated - overlapFrac * (separated - mostlyMerged);
-
-          const dx = centers[j].x - centers[i].x;
-          const dy = centers[j].y - centers[i].y;
-          const dist = Math.max(Math.hypot(dx, dy), 0.01);
-          const diff = ((dist - target) / dist) * 0.5;
-          const mx = dx * diff, my = dy * diff;
-          centers[i].x += mx; centers[i].y += my;
-          centers[j].x -= mx; centers[j].y -= my;
-        }
-      }
-      // Cohesion: nudge every clique of circles that shares at least one page together
-      // toward their common centroid, so a real shared region is likelier to exist for them.
-      for (const idxs of multiMemberships) {
-        const cx = idxs.reduce((s, i) => s + centers[i].x, 0) / idxs.length;
-        const cy = idxs.reduce((s, i) => s + centers[i].y, 0) / idxs.length;
-        for (const i of idxs) {
-          centers[i].x += (cx - centers[i].x) * 0.04;
-          centers[i].y += (cy - centers[i].y) * 0.04;
-        }
-      }
-    }
-
-    // Hard "declash" pass: force-separate disjoint circles that still overlap after the
-    // proportional relaxation above (this can happen when several groups are pulled toward
-    // a shared hub group, dragging two unrelated circles into each other along the way).
-    for (let iter = 0; iter < 150; iter++) {
-      let anyOverlap = false;
-      for (const [i, j] of disjointPairs) {
-        const ri = radii[i], rj = radii[j];
-        const minDist = ri + rj + PADDING;
-        const dx = centers[j].x - centers[i].x;
-        const dy = centers[j].y - centers[i].y;
-        const dist = Math.max(Math.hypot(dx, dy), 0.01);
-        if (dist < minDist) {
-          anyOverlap = true;
-          const diff = (minDist - dist) / dist / 2;
-          const mx = dx * diff, my = dy * diff;
-          centers[i].x -= mx; centers[i].y -= my;
-          centers[j].x += mx; centers[j].y += my;
-        }
-      }
-      if (!anyOverlap) break;
-    }
-
-    const circles: VennCircle[] = active.map((g, i) => ({
-      id: g.id, name: g.name, color: g.color, icon: g.icon,
-      cx: centers[i].x,
-      cy: centers[i].y,
-      r: radii[i],
-    }));
-
-    const nodeR = 14;
-    const minNodeSpacing = 78; // leaves room for the page title printed below each node
-    const nodePositions = new Map<string, { x: number; y: number }>();
-    const placed: { x: number; y: number }[] = [];
-
-    // Place nodes that belong to several circles first, so the intersection zones get
-    // first pick of space; nodes with a single tag are slotted in around them afterwards.
-    const orderedNodes = [...displayNodes].sort((a, b) => {
-      const la = memberOf.get(a.id)?.length ?? 0;
-      const lb = memberOf.get(b.id)?.length ?? 0;
-      return lb - la;
+    const n = active.length;
+    const spread = Math.min(420, 120 + n * 40);
+    const anchors = active.map((_, i) => {
+      const angle = (2 * Math.PI * i) / Math.max(n, 1) - Math.PI / 2;
+      return { x: spread * Math.cos(angle), y: spread * Math.sin(angle) };
     });
 
-    for (const node of orderedNodes) {
-      const idxs = memberOf.get(node.id);
-      if (!idxs || idxs.length === 0) continue;
+    const nodePos = new Map<string, Pt>();
+    vennNodes.forEach((node, idx) => {
+      const idxs = memberOf.get(node.id)!;
+      const cx = idxs.reduce((s, i) => s + anchors[i].x, 0) / idxs.length;
+      const cy = idxs.reduce((s, i) => s + anchors[i].y, 0) / idxs.length;
+      const jitter = idx * 2.399963; // golden-angle spread to break ties deterministically
+      nodePos.set(node.id, { x: cx + Math.cos(jitter) * 6, y: cy + Math.sin(jitter) * 6 });
+    });
 
-      let px = idxs.reduce((s, i) => s + circles[i].cx, 0) / idxs.length;
-      let py = idxs.reduce((s, i) => s + circles[i].cy, 0) / idxs.length;
-
-      for (let iter = 0; iter < 150; iter++) {
-        let moved = false;
-        for (let i = 0; i < circles.length; i++) {
-          const c = circles[i];
-          const dx = px - c.cx, dy = py - c.cy;
+    const minSpacing = 64;
+    for (let iter = 0; iter < 260; iter++) {
+      // Tag anchors follow the centroid of their current members.
+      for (let i = 0; i < n; i++) {
+        const members = active[i].pageIds.filter((id) => nodePos.has(id));
+        if (members.length === 0) continue;
+        const cx = members.reduce((s, id) => s + nodePos.get(id)!.x, 0) / members.length;
+        const cy = members.reduce((s, id) => s + nodePos.get(id)!.y, 0) / members.length;
+        anchors[i].x += (cx - anchors[i].x) * 0.5;
+        anchors[i].y += (cy - anchors[i].y) * 0.5;
+      }
+      // Each page is pulled toward the centroid of its own tags' anchors.
+      for (const node of vennNodes) {
+        const idxs = memberOf.get(node.id)!;
+        const tx = idxs.reduce((s, i) => s + anchors[i].x, 0) / idxs.length;
+        const ty = idxs.reduce((s, i) => s + anchors[i].y, 0) / idxs.length;
+        const p = nodePos.get(node.id)!;
+        p.x += (tx - p.x) * 0.12;
+        p.y += (ty - p.y) * 0.12;
+      }
+      // General repulsion so pages (and their labels) never collapse onto each other.
+      for (let a = 0; a < vennNodes.length; a++) {
+        const pa = nodePos.get(vennNodes[a].id)!;
+        for (let b = a + 1; b < vennNodes.length; b++) {
+          const pb = nodePos.get(vennNodes[b].id)!;
+          const dx = pb.x - pa.x, dy = pb.y - pa.y;
           const dist = Math.max(Math.hypot(dx, dy), 0.01);
-          if (idxs.includes(i)) {
-            if (dist > c.r - nodeR) {
-              const k = (c.r - nodeR) / dist;
-              px = c.cx + dx * k; py = c.cy + dy * k;
-              moved = true;
-            }
-          } else if (dist < c.r + nodeR * 1.1) {
-            const k = (c.r + nodeR * 1.1) / dist;
-            px = c.cx + dx * k; py = c.cy + dy * k;
-            moved = true;
+          if (dist < minSpacing) {
+            const push = (minSpacing - dist) / 2;
+            const ux = dx / dist, uy = dy / dist;
+            pa.x -= ux * push; pa.y -= uy * push;
+            pb.x += ux * push; pb.y += uy * push;
           }
         }
-        if (!moved) break;
       }
-
-      for (let iter = 0; iter < 60; iter++) {
-        let moved = false;
-        for (const o of placed) {
-          const dx = px - o.x, dy = py - o.y;
-          const dist = Math.max(Math.hypot(dx, dy), 0.01);
-          if (dist < minNodeSpacing) {
-            const push = (minNodeSpacing - dist) / 2;
-            px += (dx / dist) * push; py += (dy / dist) * push;
-            moved = true;
-          }
-        }
-        if (!moved) break;
-      }
-
-      placed.push({ x: px, y: py });
-      nodePositions.set(node.id, { x: px, y: py });
     }
 
-    // Fit the viewBox tightly around the circles (plus their top label) and the placed nodes,
-    // so the diagram always fills the rendered area instead of sitting tiny in empty space.
+    const PADDING = 42;
+    const blobs: VennBlob[] = active.map((g) => {
+      const members = g.pageIds.filter((id) => nodePos.has(id)).map((id) => nodePos.get(id)!);
+      const hullPts = buildBlobPoints(members, PADDING);
+      const labelX = members.reduce((s, p) => s + p.x, 0) / members.length;
+      const labelY = Math.min(...hullPts.map((p) => p.y));
+      return { id: g.id, name: g.name, color: g.color, icon: g.icon, path: smoothClosedPath(hullPts), labelX, labelY };
+    });
+
+    // Fit the viewBox tightly around every blob and node, so the diagram always fills the
+    // rendered area instead of sitting tiny in empty space.
+    const allPts = Array.from(nodePos.values());
     const labelPad = 34;
-    const xs = [
-      ...circles.map((c) => c.cx - c.r),
-      ...circles.map((c) => c.cx + c.r),
-      ...placed.map((p) => p.x),
-    ];
-    const ys = [
-      ...circles.map((c) => c.cy - c.r - labelPad),
-      ...circles.map((c) => c.cy + c.r),
-      ...placed.map((p) => p.y),
-    ];
-    const pad = 50;
+    const xs = allPts.map((p) => p.x);
+    const ys = [...allPts.map((p) => p.y), ...blobs.map((b) => b.labelY - labelPad)];
+    const pad = 70;
     const minX = Math.min(...xs) - pad;
     const maxX = Math.max(...xs) + pad;
     const minY = Math.min(...ys) - pad;
     const maxY = Math.max(...ys) + pad;
     const viewBox = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
 
-    return { circles, nodePositions, viewBox };
+    return { blobs, nodePositions: nodePos, viewBox };
   }, [showGroups, groups, displayNodes]);
 
   const legend = useMemo(() => {
@@ -483,7 +471,7 @@ export default function GraphPage() {
             <p className="text-sm text-gray-400">
               {displayNodes.length} page{displayNodes.length !== 1 ? "s" : ""} connectée{displayNodes.length !== 1 ? "s" : ""}
               {showGroups
-                ? ` · ${vennLayout.circles.length} groupe${vennLayout.circles.length !== 1 ? "s" : ""}`
+                ? ` · ${vennLayout.blobs.length} groupe${vennLayout.blobs.length !== 1 ? "s" : ""}`
                 : ` · ${displayEdges.length} lien${displayEdges.length !== 1 ? "s" : ""}`}
             </p>
           </div>
@@ -532,7 +520,7 @@ export default function GraphPage() {
                 preserveAspectRatio="xMidYMid meet"
                 className={showGroups ? "w-full" : "max-w-full"}
               >
-                {vennLayout.circles.map((g) => {
+                {vennLayout.blobs.map((g) => {
                   const label = g.icon ? `${g.icon} ${g.name}` : g.name;
                   const displayLabel = label.length > 22 ? label.slice(0, 20) + "…" : label;
                   const labelWidth = Math.max(56, displayLabel.length * 7 + 24);
@@ -542,12 +530,12 @@ export default function GraphPage() {
                       style={{ cursor: canManage ? "pointer" : "default" }}
                       onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
                     >
-                      <circle
-                        cx={g.cx} cy={g.cy} r={g.r}
+                      <path
+                        d={g.path}
                         fill={g.color} fillOpacity={0.16}
                         stroke={g.color} strokeOpacity={0.8} strokeWidth={1.5}
                       />
-                      <g transform={`translate(${g.cx}, ${g.cy - g.r})`}>
+                      <g transform={`translate(${g.labelX}, ${g.labelY - 16})`}>
                         <rect x={-labelWidth / 2} y={-11} width={labelWidth} height={22} rx={11} fill={g.color} />
                         <text textAnchor="middle" y={4} fontSize={11} fontWeight={700} fill="#fff">{displayLabel}</text>
                       </g>
@@ -618,11 +606,11 @@ export default function GraphPage() {
           </div>
 
           {showGroups ? (
-            vennLayout.circles.length > 0 && (
+            vennLayout.blobs.length > 0 && (
               <div className="w-48 shrink-0 bg-white border border-gray-100 rounded-xl p-4 sticky top-20">
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Groupes (tags)</h2>
                 <div className="space-y-2">
-                  {vennLayout.circles.map((g) => (
+                  {vennLayout.blobs.map((g) => (
                     <div key={g.id} className="flex items-center gap-2 text-sm text-gray-700">
                       <span className="w-3 h-3 rounded-full shrink-0" style={{ background: g.color }} />
                       <span className="truncate">{g.icon ? `${g.icon} ` : ""}{g.name}</span>
@@ -631,7 +619,7 @@ export default function GraphPage() {
                 </div>
                 <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
                   Les zones de chevauchement indiquent les pages partageant plusieurs tags. Double-clic sur une page : ouvrir la page.
-                  {canManage && " Clic sur un cercle : modifier la couleur/icône du tag."}
+                  {canManage && " Clic sur une zone : modifier la couleur/icône du tag."}
                 </p>
               </div>
             )
