@@ -54,14 +54,18 @@ export async function GET() {
 
   const edges: Edge[] = [];
   const refSeen = new Set<string>();
+  const relationPairs = new Set(
+    relations.map((r) => [r.pageAId, r.pageBId].sort().join("::"))
+  );
 
   const addReference = (source: string, target: string) => {
     if (source === target) return;
     if (!idSet.has(source) || !idSet.has(target)) return;
     const key = [source, target].sort().join("::");
-    if (refSeen.has(key)) return;
+    if (refSeen.has(key) || relationPairs.has(key)) return;
     refSeen.add(key);
-    edges.push({ id: null, source, target, type: REFERENCE_TYPE, color: REFERENCE_COLOR, editable: false });
+    // Auto-detected references are editable too: editing one promotes it into a real PageRelation.
+    edges.push({ id: null, source, target, type: REFERENCE_TYPE, color: REFERENCE_COLOR, editable: true });
   };
 
   for (const p of accessible) {

@@ -52,7 +52,7 @@ export default function GraphPage() {
   const [newColor, setNewColor] = useState("#16a34a");
   const [creating, setCreating] = useState(false);
 
-  const [editEdge, setEditEdge] = useState<{ id: string; type: string; color: string; x: number; y: number } | null>(null);
+  const [editEdge, setEditEdge] = useState<{ id: string | null; source: string; target: string; type: string; color: string; x: number; y: number } | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -144,25 +144,35 @@ export default function GraphPage() {
   };
 
   const openEdgeEditor = (e: React.MouseEvent, edge: GraphEdge) => {
-    if (!edge.editable || !edge.id) return;
-    setEditEdge({ id: edge.id, type: edge.type, color: edge.color, x: e.clientX, y: e.clientY });
+    if (!edge.editable || !canManage) return;
+    setEditEdge({ id: edge.id, source: edge.source, target: edge.target, type: edge.type, color: edge.color, x: e.clientX, y: e.clientY });
   };
 
   const saveEdgeEdit = async () => {
     if (!editEdge) return;
     setSaving(true);
-    await fetch(`/api/relations/${editEdge.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: editEdge.type, color: editEdge.color }),
-    });
+    if (editEdge.id) {
+      // Existing relation: update it in place
+      await fetch(`/api/relations/${editEdge.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: editEdge.type, color: editEdge.color }),
+      });
+    } else {
+      // Auto-detected reference: promote it into a real, editable relation
+      await fetch("/api/relations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageAId: editEdge.source, pageBId: editEdge.target, type: editEdge.type, color: editEdge.color }),
+      });
+    }
     setSaving(false);
     setEditEdge(null);
     fetchGraph();
   };
 
   const deleteEdge = async () => {
-    if (!editEdge) return;
+    if (!editEdge?.id) { setEditEdge(null); return; }
     await fetch(`/api/relations/${editEdge.id}`, { method: "DELETE" });
     setEditEdge(null);
     fetchGraph();
@@ -213,15 +223,16 @@ export default function GraphPage() {
                   const b = positions.get(e.target);
                   if (!a || !b) return null;
                   const dimmed = hovered && !(e.source === hovered || e.target === hovered);
+                  const isPromoted = e.id !== null;
                   return (
                     <line
                       key={e.id ?? `ref-${i}`}
                       x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                       stroke={dimmed ? "#e5e7eb" : e.color}
                       strokeOpacity={dimmed ? 0.4 : 0.7}
-                      strokeWidth={e.editable ? 2.5 : 1.5}
-                      strokeDasharray={e.editable ? undefined : "4 3"}
-                      style={{ cursor: e.editable ? "pointer" : "default" }}
+                      strokeWidth={isPromoted ? 2.5 : 1.5}
+                      strokeDasharray={isPromoted ? undefined : "4 3"}
+                      style={{ cursor: e.editable && canManage ? "pointer" : "default" }}
                       onClick={(ev) => { ev.stopPropagation(); openEdgeEditor(ev, e); }}
                     />
                   );
@@ -272,7 +283,7 @@ export default function GraphPage() {
               </div>
               {canManage && (
                 <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
-                  Cliquez sur un lien plein pour le modifier. Les pointillés sont des références automatiques (non modifiables).
+                  Cliquez sur n&apos;importe quel lien pour le modifier. Les pointillés sont des références automatiques — les éditer les transforme en lien narratif dédié.
                 </p>
               )}
             </div>
@@ -396,6 +407,9 @@ export default function GraphPage() {
           style={{ left: Math.min(editEdge.x, window.innerWidth - 280), top: Math.min(editEdge.y, window.innerHeight - 180) }}
           onClick={(e) => e.stopPropagation()}
         >
+          {!editEdge.id && (
+            <p className="text-[11px] text-gray-400 mb-2">Référence automatique — modifiez-la pour en faire un lien narratif dédié.</p>
+          )}
           <div className="flex flex-wrap gap-1 mb-2">
             {RELATION_PRESETS.map((p) => (
               <button
@@ -421,9 +435,11 @@ export default function GraphPage() {
             />
           </div>
           <div className="flex gap-2">
-            <button onClick={deleteEdge} className="flex items-center gap-1 px-2.5 py-1.5 text-red-500 hover:bg-red-50 rounded-lg text-xs font-medium transition-colors">
-              <Trash2 size={12} />Supprimer
-            </button>
+            {editEdge.id && (
+              <button onClick={deleteEdge} className="flex items-center gap-1 px-2.5 py-1.5 text-red-500 hover:bg-red-50 rounded-lg text-xs font-medium transition-colors">
+                <Trash2 size={12} />Supprimer
+              </button>
+            )}
             <button onClick={saveEdgeEdit} disabled={saving} className="ml-auto flex items-center gap-1 px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
               <Check size={12} />{saving ? "…" : "Sauvegarder"}
             </button>
