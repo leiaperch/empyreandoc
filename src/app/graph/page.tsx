@@ -191,6 +191,17 @@ export default function GraphPage() {
       return c;
     };
 
+    const memberOf = new Map<string, number[]>();
+    active.forEach((g, i) => {
+      for (const id of g.pageIds) {
+        if (!memberOf.has(id)) memberOf.set(id, []);
+        memberOf.get(id)!.push(i);
+      }
+    });
+    // Pages with 3+ tags need their circles pulled toward a real common region — pairwise
+    // overlap alone doesn't guarantee a shared triple (or higher) intersection exists.
+    const multiMemberships = Array.from(memberOf.values()).filter((idxs) => idxs.length >= 2);
+
     const PADDING = 34;
     // Pairs that share zero pages must NEVER end up touching — this is a hard constraint,
     // checked separately from the soft proportional-overlap spring below.
@@ -219,6 +230,16 @@ export default function GraphPage() {
           const mx = dx * diff, my = dy * diff;
           centers[i].x += mx; centers[i].y += my;
           centers[j].x -= mx; centers[j].y -= my;
+        }
+      }
+      // Cohesion: nudge every clique of circles that shares at least one page together
+      // toward their common centroid, so a real shared region is likelier to exist for them.
+      for (const idxs of multiMemberships) {
+        const cx = idxs.reduce((s, i) => s + centers[i].x, 0) / idxs.length;
+        const cy = idxs.reduce((s, i) => s + centers[i].y, 0) / idxs.length;
+        for (const i of idxs) {
+          centers[i].x += (cx - centers[i].x) * 0.04;
+          centers[i].y += (cy - centers[i].y) * 0.04;
         }
       }
     }
@@ -251,14 +272,6 @@ export default function GraphPage() {
       cy: centers[i].y,
       r: radii[i],
     }));
-
-    const memberOf = new Map<string, number[]>();
-    active.forEach((g, i) => {
-      for (const id of g.pageIds) {
-        if (!memberOf.has(id)) memberOf.set(id, []);
-        memberOf.get(id)!.push(i);
-      }
-    });
 
     const nodeR = 14;
     const minNodeSpacing = 78; // leaves room for the page title printed below each node
