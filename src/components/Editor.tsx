@@ -3,7 +3,6 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -14,6 +13,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { PageLink } from "./PageLinkExtension";
+import { CustomImage } from "./ImageExtension";
 import { Callout, type CalloutVariant } from "./CalloutExtension";
 import { Secret } from "./SecretExtension";
 import { createPersonnageMention } from "./PersonnageMention";
@@ -26,22 +26,6 @@ import {
   FileImage, BookOpen, Undo, Redo, LayoutTemplate, Highlighter, Minus,
   Table2, Quote, Lock,
 } from "lucide-react";
-
-/* ─── Custom Image extension with data-align ────────────────────────────── */
-const CustomImage = Image.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      "data-align": {
-        default: "center",
-        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") ?? "center",
-        renderHTML: (attrs: Record<string, string>) => ({
-          "data-align": attrs["data-align"] ?? "center",
-        }),
-      },
-    };
-  },
-});
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
 const FONTS = [

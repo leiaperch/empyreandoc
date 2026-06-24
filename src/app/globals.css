@@ -53,26 +53,80 @@ body {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  margin: 1em 0;
 }
 
-/* Image alignment / float */
-.ProseMirror img[data-align="left"] {
+/* ── Image redimensionnable (NodeView) dans l'éditeur ── */
+.ProseMirror .img-wrapper {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  margin: 1rem auto;
+  line-height: 0;
+}
+.ProseMirror .img-wrapper[data-align="left"] {
   float: left;
-  margin: 0.25rem 1.25rem 0.5rem 0;
-  max-width: 45%;
+  margin: 0.25rem 1.5rem 0.75rem 0;
   clear: left;
 }
-.ProseMirror img[data-align="right"] {
+.ProseMirror .img-wrapper[data-align="right"] {
   float: right;
-  margin: 0.25rem 0 0.5rem 1.25rem;
-  max-width: 45%;
+  margin: 0.25rem 0 0.75rem 1.5rem;
   clear: right;
 }
-.ProseMirror img[data-align="center"] {
-  display: block;
-  margin: 1rem auto;
+.ProseMirror .img-wrapper[data-align="center"] {
   float: none;
+  margin: 1rem auto;
+}
+/* Largeur par défaut quand l'image flotte sans taille explicite */
+.ProseMirror .img-wrapper[data-align="left"]:not([style]),
+.ProseMirror .img-wrapper[data-align="right"]:not([style]) { width: 45%; }
+.ProseMirror .img-wrapper img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+}
+.ProseMirror .img-wrapper.selected img {
+  outline: 2px solid #16a34a;
+  outline-offset: 2px;
+}
+.img-toolbar {
+  position: absolute;
+  top: -42px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  padding: 3px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
+  z-index: 30;
+  line-height: normal;
+}
+.img-toolbar button {
+  padding: 4px;
+  border-radius: 6px;
+  color: #4b5563;
+  display: flex;
+}
+.img-toolbar button:hover { background: #dcfce7; color: #15803d; }
+.img-toolbar button.on { background: #16a34a; color: #fff; }
+.img-toolbar .sep { width: 1px; height: 18px; background: #e5e7eb; margin: 0 3px; }
+.img-resize-handle {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  background: #16a34a;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  z-index: 30;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 /* clearfix after floated images */
 .ProseMirror p:has(+ p) { overflow: hidden; }
@@ -135,23 +189,25 @@ body {
   font-size: 0.95rem;
 }
 
+.reading-mode img { border-radius: 10px; height: auto; }
 .reading-mode img[data-align="left"] {
   float: left;
-  margin: 0.25rem 1.25rem 0.5rem 0;
-  max-width: 45%;
+  margin: 0.25rem 1.5rem 0.75rem 0;
   clear: left;
 }
 .reading-mode img[data-align="right"] {
   float: right;
-  margin: 0.25rem 0 0.5rem 1.25rem;
-  max-width: 45%;
+  margin: 0.25rem 0 0.75rem 1.5rem;
   clear: right;
 }
 .reading-mode img[data-align="center"] {
   display: block;
-  margin: 1rem auto;
+  margin: 1.25rem auto;
   float: none;
 }
+/* Largeur par défaut quand l'image flotte sans taille explicite */
+.reading-mode img[data-align="left"]:not([style]),
+.reading-mode img[data-align="right"]:not([style]) { width: 45%; }
 
 /* ── Encadrés (callouts) ── */
 [data-type="callout"] {
