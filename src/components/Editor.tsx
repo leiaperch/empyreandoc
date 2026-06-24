@@ -39,6 +39,9 @@ const FONTS = [
 
 const FONT_SIZES = ["10px","12px","14px","16px","18px","20px","24px","28px","32px","36px","48px","64px"];
 
+// Limite pour les images/GIF intégrés directement dans le contenu (base64).
+const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8 Mo
+
 const HIGHLIGHT_COLORS = [
   "#fef08a","#bbf7d0","#bfdbfe","#fecaca","#f9a8d4","#ddd6fe","#fed7aa","#d1fae5",
 ];
@@ -207,6 +210,10 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
             const file = item.getAsFile();
             if (!file) continue;
             event.preventDefault();
+            if (file.size > MAX_IMAGE_SIZE) {
+              alert(`Image trop lourde (${(file.size / 1024 / 1024).toFixed(1)} Mo). Maximum 8 Mo.`);
+              return true;
+            }
             const reader = new FileReader();
             reader.onload = () => {
               const { schema } = view.state;
@@ -261,6 +268,11 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_IMAGE_SIZE) {
+      alert(`Image trop lourde (${(file.size / 1024 / 1024).toFixed(1)} Mo). Maximum 8 Mo — réduis le GIF/l'image avant de l'insérer.`);
+      e.target.value = "";
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       editor.chain().focus().setImage({ src: reader.result as string }).run();
@@ -546,7 +558,7 @@ export default function Editor({ content, onChange, editable = true }: EditorPro
           </div>
 
           {/* Image */}
-          <input ref={imgInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+          <input ref={imgInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/*" className="hidden" onChange={handleImageFile} />
           <ToolbarBtn onClick={() => imgInputRef.current?.click()} title="Insérer une image">
             <FileImage size={15} />
           </ToolbarBtn>

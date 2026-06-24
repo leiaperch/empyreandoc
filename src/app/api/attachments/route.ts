@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-const MAX_SIZE = 4 * 1024 * 1024; // 4 MB
+const MAX_SIZE = 8 * 1024 * 1024; // 8 MB (GIF compris)
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (file.size > MAX_SIZE) {
-    return NextResponse.json({ error: "Fichier trop volumineux (max 4 Mo)." }, { status: 413 });
+    return NextResponse.json({ error: "Fichier trop volumineux (max 8 Mo)." }, { status: 413 });
   }
 
   const page = await prisma.page.findUnique({ where: { id: pageId } });
