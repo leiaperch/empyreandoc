@@ -13,16 +13,19 @@ export async function GET() {
     prisma.page.findMany({ select: { tags: true } }),
   ]);
 
-  const dbNames = new Set(dbTags.map((t) => t.name));
-  const extraNames: string[] = [];
+  // Compte le nombre de pages portant chaque tag.
+  const counts = new Map<string, number>();
   for (const p of pages) {
     for (const t of p.tags.split(",").map((s) => s.trim()).filter(Boolean)) {
-      if (!dbNames.has(t)) extraNames.push(t);
+      counts.set(t, (counts.get(t) ?? 0) + 1);
     }
   }
 
+  const dbNames = new Set(dbTags.map((t) => t.name));
+  const extraNames = Array.from(counts.keys()).filter((name) => !dbNames.has(name));
+
   const FALLBACK_COLORS = ["#16a34a","#7c3aed","#2563eb","#d97706","#dc2626","#0891b2","#db2777","#65a30d"];
-  const extras = Array.from(new Set(extraNames)).map((name, i) => ({
+  const extras = extraNames.map((name, i) => ({
     id: name,
     name,
     color: FALLBACK_COLORS[i % FALLBACK_COLORS.length],
@@ -30,7 +33,8 @@ export async function GET() {
     group: null,
   }));
 
-  return NextResponse.json([...dbTags, ...extras]);
+  const withCount = [...dbTags, ...extras].map((t) => ({ ...t, count: counts.get(t.name) ?? 0 }));
+  return NextResponse.json(withCount);
 }
 
 export async function POST(req: NextRequest) {

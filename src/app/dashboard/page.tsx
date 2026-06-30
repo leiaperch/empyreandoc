@@ -10,6 +10,7 @@ interface Page {
   id: string;
   title: string;
   updatedAt: string;
+  tags: string;
   category: { id: string; name: string; icon: string | null; parentId: string | null };
   author: { name: string };
   _count: { attachments: number };
@@ -63,7 +64,7 @@ export default function Dashboard() {
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [categories, setCategories] = useState<{ id: string; name: string; icon: string | null }[]>([]);
-  const [groupByCategory, setGroupByCategory] = useState(false);
+  const [groupMode, setGroupMode] = useState<"none" | "category" | "tag">("none");
   const [favorites, setFavorites] = useState<FavoritePage[]>([]);
   const [joueursCount, setJoueursCount] = useState(0);
   const [tagsCount, setTagsCount] = useState(0);
@@ -146,17 +147,32 @@ export default function Dashboard() {
   );
 
   const groupedPages = useMemo(() => {
-    if (!groupByCategory) return null;
+    if (groupMode === "none") return null;
     const groups = new Map<string, { label: string; icon: string | null; pages: Page[] }>();
-    for (const p of filteredPages) {
-      const key = p.category.id;
-      if (!groups.has(key)) {
-        groups.set(key, { label: p.category.name, icon: p.category.icon, pages: [] });
+    if (groupMode === "category") {
+      for (const p of filteredPages) {
+        const key = p.category.id;
+        if (!groups.has(key)) groups.set(key, { label: p.category.name, icon: p.category.icon, pages: [] });
+        groups.get(key)!.pages.push(p);
       }
-      groups.get(key)!.pages.push(p);
+    } else {
+      for (const p of filteredPages) {
+        const tags = (p.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+        if (tags.length === 0) {
+          if (!groups.has("__none__")) groups.set("__none__", { label: "Sans tag", icon: "🏷️", pages: [] });
+          groups.get("__none__")!.pages.push(p);
+        } else {
+          for (const t of tags) {
+            if (!groups.has(t)) groups.set(t, { label: t, icon: "🏷️", pages: [] });
+            groups.get(t)!.pages.push(p);
+          }
+        }
+      }
     }
-    return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [filteredPages, groupByCategory]);
+    return Array.from(groups.values()).sort((a, b) =>
+      a.label === "Sans tag" ? 1 : b.label === "Sans tag" ? -1 : a.label.localeCompare(b.label)
+    );
+  }, [filteredPages, groupMode]);
 
   if (status === "loading") {
     return (
@@ -182,18 +198,32 @@ export default function Dashboard() {
             />
           </div>
 
-          <button
-            onClick={() => setGroupByCategory((v) => !v)}
-            title={groupByCategory ? "Vue liste" : "Grouper par rubrique"}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border ${
-              groupByCategory
-                ? "bg-green-600 text-white border-green-600"
-                : "text-gray-500 border-gray-200 hover:text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            <Layers size={15} />
-            <span className="hidden sm:inline">Grouper</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setGroupMode((m) => (m === "category" ? "none" : "category"))}
+              title="Grouper par rubrique"
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border ${
+                groupMode === "category"
+                  ? "bg-green-600 text-white border-green-600"
+                  : "text-gray-500 border-gray-200 hover:text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <Layers size={15} />
+              <span className="hidden sm:inline">Rubrique</span>
+            </button>
+            <button
+              onClick={() => setGroupMode((m) => (m === "tag" ? "none" : "tag"))}
+              title="Grouper par tag"
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border ${
+                groupMode === "tag"
+                  ? "bg-green-600 text-white border-green-600"
+                  : "text-gray-500 border-gray-200 hover:text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <Tag size={15} />
+              <span className="hidden sm:inline">Tag</span>
+            </button>
+          </div>
 
           {canCreate && (
             <button

@@ -326,16 +326,25 @@ export default function DocPage({ params }: { params: { id: string } }) {
 
           {/* Tags */}
           <div className="flex flex-wrap items-center gap-1.5 mb-6 min-h-[28px] relative">
-            {tags.map((tag) => (
-              <span key={tag} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${tagColor(tag)}`}>
-                {tag}
-                {editing && (
+            {tags.map((tag) =>
+              editing ? (
+                <span key={tag} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${tagColor(tag)}`}>
+                  {tag}
                   <button onClick={() => removeTag(tag)} className="hover:opacity-70 transition-opacity ml-0.5">
                     <X size={10} />
                   </button>
-                )}
-              </span>
-            ))}
+                </span>
+              ) : (
+                <Link
+                  key={tag}
+                  href={`/tag/${encodeURIComponent(tag)}`}
+                  title={`Voir les pages avec le tag « ${tag} »`}
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border transition-all hover:brightness-95 hover:shadow-sm ${tagColor(tag)}`}
+                >
+                  {tag}
+                </Link>
+              )
+            )}
             {editing && (
               <div className="relative">
                 <div className="flex items-center gap-1">

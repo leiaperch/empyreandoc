@@ -2,10 +2,10 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
 import EmojiPicker from "@/components/EmojiPicker";
-import { Share2, Plus, X, Trash2, Check, ArrowLeft, Tag, CircleDot, Circle as CircleOutline } from "lucide-react";
+import { Share2, Plus, X, Trash2, Check, ArrowLeft, Tag, CircleDot, Circle as CircleOutline, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 
 interface GraphNode {
   id: string;
@@ -154,6 +154,21 @@ export default function GraphPage() {
   const [tagEdit, setTagEdit] = useState<{ name: string; color: string; icon: string; x: number; y: number } | null>(null);
   const [savingTag, setSavingTag] = useState(false);
 
+  // Zoom & déplacement (pan) de la vue SVG
+  const [viewT, setViewT] = useState({ zoom: 1, x: 0, y: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+  const panning = useRef(false);
+
+  // Focus sur un groupe de tags (équivalent du focus sur un personnage)
+  const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
+
+  // Recoloration d'un type de lien (depuis la légende)
+  const [typeEdit, setTypeEdit] = useState<{ type: string; color: string } | null>(null);
+  const [savingType, setSavingType] = useState(false);
+
+  const resetView = () => setViewT({ zoom: 1, x: 0, y: 0 });
+  const zoomBy = (f: number) => setViewT((v) => ({ ...v, zoom: Math.min(4, Math.max(0.3, v.zoom * f)) }));
+
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
   }, [status, router]);
@@ -201,6 +216,21 @@ export default function GraphPage() {
   useEffect(() => {
     if (focusedNodeId && !focusedNode) setFocusedNodeId(null);
   }, [focusedNodeId, focusedNode]);
+
+  // Réinitialise zoom/pan quand on change de vue ou de focus
+  useEffect(() => { resetView(); }, [showGroups, focusedNodeId, focusedGroupId]);
+
+  // Molette = zoom (listener natif non-passif pour pouvoir bloquer le scroll de page)
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      zoomBy(e.deltaY < 0 ? 1.12 : 0.89);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   const displayNodes = useMemo(() => {
     if (!focusedNode) return nodes;
@@ -251,7 +281,9 @@ export default function GraphPage() {
     const visibleIds = new Set(displayNodes.map((n) => n.id));
     const active = groups
       .map((g) => ({ ...g, pageIds: g.pageIds.filter((id) => visibleIds.has(id)) }))
-      .filter((g) => g.pageIds.length >= 2);
+      .filter((g) => g.pageIds.length >= 2)
+      // Si un groupe est ciblé, on n'affiche que celui-là (recentrage).
+      .filter((g) => !focusedGroupId || g.id === focusedGroupId);
     if (active.length === 0) return empty;
 
     const memberOf = new Map<string, number[]>();
@@ -374,7 +406,7 @@ export default function GraphPage() {
     const viewBox = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
 
     return { blobs, nodePositions: nodePos, viewBox };
-  }, [showGroups, groups, displayNodes]);
+  }, [showGroups, groups, displayNodes, focusedGroupId]);
 
   const legend = useMemo(() => {
     const map = new Map<string, string>();
@@ -463,6 +495,19 @@ export default function GraphPage() {
     setTagEdit({ name: g.name, color: g.color, icon: g.icon ?? "", x: e.clientX, y: e.clientY });
   };
 
+  const saveTypeEdit = async () => {
+    if (!typeEdit) return;
+    setSavingType(true);
+    await fetch("/api/relations/recolor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: typeEdit.type, color: typeEdit.color }),
+    });
+    setSavingType(false);
+    setTypeEdit(null);
+    fetchGraph();
+  };
+
   const saveTagEdit = async () => {
     if (!tagEdit) return;
     setSavingTag(true);
@@ -484,8 +529,35 @@ export default function GraphPage() {
     );
   }
 
+  // Boîte de vue courante + transform de zoom/pan (zoom centré + déplacement)
+  const vbArr = showGroups
+    ? vennLayout.viewBox.split(" ").map(Number)
+    : [0, 0, size, size];
+  const [vbX, vbY, vbW, vbH] = vbArr;
+  const cX = vbX + vbW / 2;
+  const cY = vbY + vbH / 2;
+  const viewTransform = `translate(${cX + viewT.x} ${cY + viewT.y}) scale(${viewT.zoom}) translate(${-cX} ${-cY})`;
+
+  const onPanStart = (e: React.PointerEvent) => {
+    // Ne démarre le pan que sur le fond (pas sur un nœud/lien/blob)
+    if (e.target !== e.currentTarget) return;
+    panning.current = true;
+    const ratio = vbW / (svgRef.current?.clientWidth || vbW);
+    const onMove = (ev: PointerEvent) => {
+      if (!panning.current) return;
+      setViewT((v) => ({ ...v, x: v.x + ev.movementX * ratio, y: v.y + ev.movementY * ratio }));
+    };
+    const onUp = () => {
+      panning.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden" onClick={() => { setEditEdge(null); setTagEdit(null); }}>
+    <div className="flex h-screen bg-gray-50 overflow-hidden" onClick={() => { setEditEdge(null); setTagEdit(null); setTypeEdit(null); }}>
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-3">
@@ -497,6 +569,13 @@ export default function GraphPage() {
                   <span>{focusedNode.icon}</span>
                   <span>{focusedNode.title}</span>
                 </>
+              ) : showGroups && focusedGroupId ? (
+                <>
+                  <Tag size={16} className="text-green-600" />
+                  <span>{vennLayout.blobs[0]?.name ?? "Groupe"}</span>
+                </>
+              ) : showGroups ? (
+                "Diagramme de groupes"
               ) : (
                 "Graphe de liens"
               )}
@@ -508,9 +587,20 @@ export default function GraphPage() {
                 : ` · ${displayEdges.length} lien${displayEdges.length !== 1 ? "s" : ""}`}
             </p>
           </div>
-          {focusedNode && (
+          {/* Contrôles de zoom */}
+          <div className="flex items-center gap-0.5 border border-gray-200 rounded-lg px-1 py-0.5">
+            <button onClick={() => zoomBy(0.83)} title="Dézoomer"
+              className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"><ZoomOut size={15} /></button>
+            <span className="text-xs text-gray-400 w-10 text-center tabular-nums">{Math.round(viewT.zoom * 100)}%</span>
+            <button onClick={() => zoomBy(1.2)} title="Zoomer"
+              className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"><ZoomIn size={15} /></button>
+            <button onClick={resetView} title="Réinitialiser la vue"
+              className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"><RotateCcw size={14} /></button>
+          </div>
+
+          {(focusedNode || focusedGroupId) && (
             <button
-              onClick={() => setFocusedNodeId(null)}
+              onClick={() => { setFocusedNodeId(null); setFocusedGroupId(null); }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ArrowLeft size={14} />Tout le graphe
@@ -547,17 +637,27 @@ export default function GraphPage() {
               </div>
             ) : (
               <svg
+                ref={svgRef}
                 viewBox={showGroups ? vennLayout.viewBox : `0 0 ${size} ${size}`}
                 width={showGroups ? "100%" : size}
                 height={showGroups ? 720 : size}
                 preserveAspectRatio="xMidYMid meet"
                 className={showGroups ? "w-full" : "max-w-full"}
+                style={{ cursor: panning.current ? "grabbing" : "grab", touchAction: "none" }}
               >
+                {/* Fond capturant le déplacement (pan) */}
+                <rect
+                  x={vbX} y={vbY} width={vbW} height={vbH}
+                  fill="transparent"
+                  onPointerDown={onPanStart}
+                />
+                <g transform={viewTransform}>
                 {vennLayout.blobs.map((g) => (
                   <g
                     key={g.id}
-                    style={{ cursor: canManage ? "pointer" : "default" }}
-                    onClick={(ev) => { ev.stopPropagation(); openTagEditor(g, ev); }}
+                    style={{ cursor: "pointer" }}
+                    onClick={(ev) => { ev.stopPropagation(); setFocusedGroupId((cur) => (cur === g.id ? null : g.id)); }}
+                    onDoubleClick={(ev) => { if (canManage) { ev.stopPropagation(); openTagEditor(g, ev); } }}
                   >
                     <path
                       d={g.path}
@@ -629,6 +729,7 @@ export default function GraphPage() {
                     </g>
                   );
                 })}
+                </g>
               </svg>
             )}
           </div>
@@ -646,8 +747,8 @@ export default function GraphPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
-                  Les zones de chevauchement indiquent les pages partageant plusieurs tags. Double-clic sur une page : ouvrir la page.
-                  {canManage && " Clic sur une zone : modifier la couleur/icône du tag."}
+                  Clic sur une zone : centrer sur ce groupe. Double-clic sur une page : l&apos;ouvrir.
+                  {canManage && " Double-clic sur une zone : modifier la couleur/icône du tag."}
                 </p>
               </div>
             )
@@ -655,17 +756,26 @@ export default function GraphPage() {
             legend.length > 0 && (
               <div className="w-48 shrink-0 bg-white border border-gray-100 rounded-xl p-4 sticky top-20">
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Légende</h2>
-                <div className="space-y-2">
-                  {legend.map(([type, color]) => (
-                    <div key={type} className="flex items-center gap-2 text-sm text-gray-700">
-                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
-                      <span className="truncate">{type}</span>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  {legend.map(([type, color]) => {
+                    const recolorable = canManage && type !== "Référence";
+                    return (
+                      <button
+                        key={type}
+                        disabled={!recolorable}
+                        onClick={(e) => { e.stopPropagation(); setTypeEdit({ type, color }); setTagEdit(null); setEditEdge(null); }}
+                        title={recolorable ? "Changer la couleur de ce type" : undefined}
+                        className={`flex items-center gap-2 text-sm text-gray-700 w-full text-left rounded-md px-1.5 py-1 ${recolorable ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}
+                      >
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
+                        <span className="truncate">{type}</span>
+                      </button>
+                    );
+                  })}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-3 pt-3 border-t border-gray-100">
                   Clic sur une page : centrer le graphe sur ses liens. Double-clic : ouvrir la page.
-                  {canManage && " Clic sur un lien : le modifier."}
+                  {canManage && " Clic sur un type ci-dessus : changer sa couleur. Clic sur un lien : le modifier."}
                 </p>
               </div>
             )
@@ -871,6 +981,39 @@ export default function GraphPage() {
             <button onClick={saveTagEdit} disabled={savingTag} className="ml-auto flex items-center gap-1 px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-60">
               <Check size={12} />{savingTag ? "…" : "Sauvegarder"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Recoloration d'un type de lien (depuis la légende) */}
+      {typeEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setTypeEdit(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-5 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold text-gray-900">Couleur du type</h2>
+              <button onClick={() => setTypeEdit(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              Tous les liens « <span className="font-medium" style={{ color: typeEdit.color }}>{typeEdit.type}</span> » prendront cette couleur.
+            </p>
+            <div className="flex items-center gap-2 mb-3">
+              <input type="color" value={typeEdit.color} onChange={(e) => setTypeEdit((s) => s ? { ...s, color: e.target.value } : s)}
+                className="w-10 h-10 border-none rounded cursor-pointer p-0 shrink-0" />
+              <div className="flex flex-wrap gap-1">
+                {TAG_COLORS.map((c) => (
+                  <button key={c} onClick={() => setTypeEdit((s) => s ? { ...s, color: c } : s)}
+                    className={`w-6 h-6 rounded-full border-2 transition-all ${typeEdit.color === c ? "border-gray-700 scale-110" : "border-transparent"}`}
+                    style={{ background: c }} />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setTypeEdit(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">Annuler</button>
+              <button onClick={saveTypeEdit} disabled={savingType}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60">
+                {savingType ? "…" : "Appliquer"}
+              </button>
+            </div>
           </div>
         </div>
       )}

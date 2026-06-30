@@ -13,6 +13,7 @@ interface TagObj {
   color: string;
   icon: string | null;
   group: string | null;
+  count?: number;
 }
 
 const PRESET_COLORS = [
@@ -228,7 +229,13 @@ export default function TagsPage() {
                         <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: tag.color }}>
                           {tag.icon ?? tag.name[0]?.toUpperCase()}
                         </div>
-                        <span className="flex-1 text-sm font-medium text-gray-800">{tag.name}</span>
+                        <button onClick={() => router.push(`/tag/${encodeURIComponent(tag.name)}`)}
+                          className="flex-1 text-left text-sm font-medium text-gray-800 hover:text-green-700 transition-colors">
+                          {tag.name}
+                        </button>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {tag.count ?? 0} page{(tag.count ?? 0) !== 1 ? "s" : ""}
+                        </span>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white shrink-0" style={{ background: tag.color }}>
                           {tag.icon ? `${tag.icon} ` : ""}{tag.name}
                         </span>
