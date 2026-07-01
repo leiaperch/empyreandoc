@@ -42,6 +42,15 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  await prisma.pageRelation.delete({ where: { id } });
+  const rel = await prisma.pageRelation.findUnique({ where: { id } });
+  if (!rel) return NextResponse.json({ error: "Introuvable." }, { status: 404 });
+
+  await prisma.$transaction([
+    prisma.pageRelation.delete({ where: { id } }),
+    prisma.pageRelation.deleteMany({
+      where: { pageAId: rel.pageBId, pageBId: rel.pageAId, type: rel.type },
+    }),
+  ]);
+
   return NextResponse.json({ success: true });
 }

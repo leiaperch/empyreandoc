@@ -28,14 +28,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Deux pages distinctes sont requises." }, { status: 400 });
   }
 
-  const relation = await prisma.pageRelation.create({
-    data: {
-      pageAId,
-      pageBId,
-      type: type?.trim() || "Lié",
-      color: color || "#16a34a",
-    },
-  });
+  const relType = type?.trim() || "Lié";
+  const relColor = color || "#16a34a";
 
-  return NextResponse.json(relation, { status: 201 });
+  const [rel] = await prisma.$transaction([
+    prisma.pageRelation.create({ data: { pageAId, pageBId, type: relType, color: relColor } }),
+    prisma.pageRelation.create({ data: { pageAId: pageBId, pageBId: pageAId, type: relType, color: relColor } }),
+  ]);
+
+  return NextResponse.json(rel, { status: 201 });
 }
